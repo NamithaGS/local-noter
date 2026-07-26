@@ -14,7 +14,7 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 **Want to just use the app?**
 
-1. Go to the [Releases page](https://github.com/YOUR_USERNAME/noter/releases)
+1. Go to the [Releases page](https://github.com/NamithaGS/noter/releases)
 2. Download the latest `noter-debug.apk`
 3. Install on your Android phone (Android 14+ required)
 4. Done! No development tools needed.
@@ -46,7 +46,7 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 **1. Clone the repository:**
 ```bash
-git clone https://github.com/YOUR_USERNAME/noter.git
+git clone https://github.com/NamithaGS/noter.git
 cd noter
 ```
 
@@ -296,8 +296,8 @@ Built with:
 
 ## 📞 Support
 
-- **Issues:** [GitHub Issues](https://github.com/YOUR_USERNAME/noter/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/YOUR_USERNAME/noter/discussions)
+- **Issues:** [GitHub Issues](https://github.com/NamithaGS/noter/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/NamithaGS/noter/discussions)
 
 ---
 
