@@ -1,0 +1,24 @@
+# Build output
+build/
+.gradle/
+.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+
+# Speech model: ~41 MB of binary data, fetched by scripts/fetch-vosk-model.sh
+app/src/main/assets/vosk-model-*/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+
+# OS
+.DS_Store
+Thumbs.db
