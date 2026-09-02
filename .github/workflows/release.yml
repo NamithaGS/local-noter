@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # softprops/action-gh-release needs write access to attach the APK to the
+    # release; the default GITHUB_TOKEN is read-only unless granted this.
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
