@@ -1,0 +1,33 @@
+name: Build and Attach APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch vosk model
+        run: ./scripts/fetch-vosk-model.sh
+
+      # assembleDebug (not assembleRelease): the release build type has no signingConfig,
+      # so it can't produce an installable APK in CI without a keystore secret.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: app/build/outputs/apk/debug/*.apk
