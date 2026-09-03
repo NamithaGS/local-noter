@@ -23,6 +23,7 @@ class RecordingViewModel(
 
     val recordingState: StateFlow<RecordingManager.RecordingState> = recordingManager.recordingState
     val elapsedTime: StateFlow<Int> = recordingManager.elapsedTime
+    val amplitude: StateFlow<Int> = recordingManager.amplitude
 
     private var currentNoteId: String? = null
 
@@ -33,6 +34,7 @@ class RecordingViewModel(
         val result = recordingManager.startRecording(noteId)
         if (result.isSuccess) {
             startTimer()
+            startAmplitudeMonitoring()
         }
     }
 
@@ -65,10 +67,6 @@ class RecordingViewModel(
         }
     }
 
-    fun cancelRecording() {
-        recordingManager.cancelRecording()
-    }
-
     private fun startTimer() {
         viewModelScope.launch {
             while (isActive && recordingState.value == RecordingManager.RecordingState.RECORDING) {
@@ -76,5 +74,23 @@ class RecordingViewModel(
                 delay(1000)
             }
         }
+    }
+
+    /**
+     * Polls the mic input level on its own faster loop, separate from [startTimer]'s
+     * 1s tick - a level graph sampled only once a second would look choppy and could
+     * miss short bursts of speech entirely.
+     */
+    private fun startAmplitudeMonitoring() {
+        viewModelScope.launch {
+            while (isActive && recordingState.value == RecordingManager.RecordingState.RECORDING) {
+                recordingManager.updateAmplitude()
+                delay(AMPLITUDE_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private companion object {
+        const val AMPLITUDE_POLL_INTERVAL_MS = 100L
     }
 }

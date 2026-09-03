@@ -14,8 +14,8 @@ android {
         applicationId = "com.noter"
         minSdk = 34
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
 
         ndk {
             // libvosk.so is ~10 MB per ABI. Shipping all four would add ~40 MB to the
@@ -79,9 +79,23 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("org.robolectric:robolectric:4.11.1")
+    // NoteDaoTest and FileHelperTest live under src/test (Robolectric, JVM) but use
+    // AndroidJUnit4/ApplicationProvider, so these need to be on the test classpath too,
+    // not just androidTestImplementation (which only covers src/androidTest).
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    testImplementation("androidx.test:core:1.5.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.core:core:1.5.0")
+    androidTestImplementation("androidx.test:core:1.5.0")
+    // Compose test artifacts are also version-managed by the BOM, but the BOM
+    // `platform(...)` above is only applied to `implementation`, not `androidTestImplementation`.
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // mockito-android (not mockito-core) so the inline mock maker works on-device;
+    // Compose screen tests here mock RecordingManager/NoteRepository the same way the
+    // JVM tests do, but that needs its own copy since androidTestImplementation doesn't
+    // inherit from testImplementation.
+    androidTestImplementation("org.mockito:mockito-android:5.2.0")
+    androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

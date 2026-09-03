@@ -46,6 +46,9 @@ class RecordingViewModelTest {
         `when`(recordingManager.elapsedTime).thenReturn(
             kotlinx.coroutines.flow.MutableStateFlow(0)
         )
+        `when`(recordingManager.amplitude).thenReturn(
+            kotlinx.coroutines.flow.MutableStateFlow(0)
+        )
 
         viewModel = RecordingViewModel(recordingManager, repository, workManager)
     }
@@ -76,13 +79,5 @@ class RecordingViewModelTest {
         advanceUntilIdle()
 
         verify(repository).insertNote(any())
-    }
-
-    @Test
-    fun `cancelRecording calls recordingManager cancel`() = runTest {
-        viewModel.cancelRecording()
-        advanceUntilIdle()
-
-        verify(recordingManager).cancelRecording()
     }
 }

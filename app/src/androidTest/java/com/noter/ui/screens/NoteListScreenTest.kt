@@ -3,10 +3,13 @@ package com.noter.ui.screens
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.WorkManager
 import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
+import com.noter.domain.RecordingManager
 import com.noter.ui.theme.NoterTheme
 import com.noter.ui.viewmodels.NoteListViewModel
+import com.noter.ui.viewmodels.RecordingViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Before
 import org.junit.Rule
@@ -25,13 +28,27 @@ class NoteListScreenTest {
     @Mock
     private lateinit var repository: NoteRepository
 
+    @Mock
+    private lateinit var recordingManager: RecordingManager
+
+    @Mock
+    private lateinit var workManager: WorkManager
+
     private lateinit var viewModel: NoteListViewModel
+    private lateinit var recordingViewModel: RecordingViewModel
 
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
         `when`(repository.getAllNotes()).thenReturn(MutableStateFlow(emptyList()))
         viewModel = NoteListViewModel(repository)
+
+        `when`(recordingManager.recordingState).thenReturn(
+            MutableStateFlow(RecordingManager.RecordingState.IDLE)
+        )
+        `when`(recordingManager.elapsedTime).thenReturn(MutableStateFlow(0))
+        `when`(recordingManager.amplitude).thenReturn(MutableStateFlow(0))
+        recordingViewModel = RecordingViewModel(recordingManager, repository, workManager)
     }
 
     @Test
@@ -40,7 +57,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }
@@ -56,7 +73,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }
@@ -67,23 +84,26 @@ class NoteListScreenTest {
     }
 
     @Test
-    fun recordButtonClickTriggersCallback() {
-        var clicked = false
+    fun recordingStateShowsStopLabelAndLevelGraph() {
+        `when`(recordingManager.recordingState).thenReturn(
+            MutableStateFlow(RecordingManager.RecordingState.RECORDING)
+        )
+        `when`(recordingManager.elapsedTime).thenReturn(MutableStateFlow(65))
+        recordingViewModel = RecordingViewModel(recordingManager, repository, workManager)
 
         composeTestRule.setContent {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = { clicked = true },
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }
         }
 
-        composeTestRule.onNodeWithText("Start Recording")
-            .performClick()
-
-        assert(clicked)
+        composeTestRule.onNodeWithText("Recording 01:05").assertIsDisplayed()
+        composeTestRule.onNodeWithText("No sound detected - try speaking closer to the mic")
+            .assertIsDisplayed()
     }
 
     @Test
@@ -99,7 +119,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }
@@ -121,7 +141,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }
@@ -143,7 +163,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = { noteId -> clickedNoteId = noteId }
                 )
             }
@@ -159,7 +179,7 @@ class NoteListScreenTest {
             NoterTheme {
                 NoteListScreen(
                     viewModel = viewModel,
-                    onRecordClick = {},
+                    recordingViewModel = recordingViewModel,
                     onNoteClick = {}
                 )
             }

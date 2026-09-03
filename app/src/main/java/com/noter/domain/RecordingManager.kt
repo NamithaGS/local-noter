@@ -22,6 +22,10 @@ class RecordingManager(private val context: Context) {
     private val _elapsedTime = MutableStateFlow(0)
     val elapsedTime: StateFlow<Int> = _elapsedTime
 
+    private val _amplitude = MutableStateFlow(0)
+    /** Raw microphone input level, 0..32767 (see [MediaRecorder.getMaxAmplitude]); 0 when idle. */
+    val amplitude: StateFlow<Int> = _amplitude
+
     fun startRecording(noteId: String): Result<File> {
         return try {
             val file = FileHelper.getAudioFile(context, noteId)
@@ -52,25 +56,48 @@ class RecordingManager(private val context: Context) {
 
             Result.success(file)
         } catch (e: Exception) {
+            // Setup failed (e.g. RECORD_AUDIO permission not granted, or the mic is
+            // already in use), so no MediaRecorder is actually running. Clear currentFile
+            // too - otherwise stopRecording()/the caller can be fooled into thinking a
+            // real recording exists at this path when it never started.
+            mediaRecorder = null
+            currentFile = null
             _recordingState.value = RecordingState.ERROR
             Result.failure(e)
         }
     }
 
+    /**
+     * Stops the in-progress recording.
+     *
+     * @return `Result.success` with the recording duration in seconds, or
+     *   `Result.failure` if there was no active recording to stop (e.g. [startRecording]
+     *   never succeeded) or the underlying [MediaRecorder] failed while stopping.
+     */
     fun stopRecording(): Result<Int> {
+        val recorder = mediaRecorder
+        // Without this guard, a null recorder (startRecording failed, or stopRecording
+        // was already called) would fall through to a no-op `?.apply` below and still
+        // report Result.success - which previously caused the app to save a "recording"
+        // that was never actually captured.
+        if (recorder == null || _recordingState.value != RecordingState.RECORDING) {
+            _recordingState.value = RecordingState.ERROR
+            return Result.failure(IllegalStateException("No active recording to stop"))
+        }
+
         return try {
-            mediaRecorder?.apply {
-                stop()
-                release()
-            }
+            recorder.stop()
+            recorder.release()
             mediaRecorder = null
 
             val duration = ((System.currentTimeMillis() - startTime) / 1000).toInt()
             _recordingState.value = RecordingState.IDLE
             _elapsedTime.value = 0
+            _amplitude.value = 0
 
             Result.success(duration)
         } catch (e: Exception) {
+            mediaRecorder = null
             _recordingState.value = RecordingState.ERROR
             Result.failure(e)
         }
@@ -82,20 +109,22 @@ class RecordingManager(private val context: Context) {
         }
     }
 
-    fun cancelRecording() {
-        try {
-            mediaRecorder?.apply {
-                stop()
-                release()
-            }
-            mediaRecorder = null
-            currentFile?.delete()
-            currentFile = null
-
-            _recordingState.value = RecordingState.IDLE
-            _elapsedTime.value = 0
+    /**
+     * Samples the current microphone input level into [amplitude].
+     *
+     * [MediaRecorder.getMaxAmplitude] reports the loudest sample seen since the *last*
+     * call and resets internally afterward - it's not a live "current level" read. So
+     * this must be polled at a steady interval (see RecordingViewModel's amplitude
+     * monitoring loop) rather than called once, or the reported level will be wrong.
+     */
+    fun updateAmplitude() {
+        if (_recordingState.value != RecordingState.RECORDING) return
+        _amplitude.value = try {
+            mediaRecorder?.maxAmplitude ?: 0
         } catch (e: Exception) {
-            _recordingState.value = RecordingState.ERROR
+            // Can throw if stop() raced this call and tore down the recorder mid-sample;
+            // treat that as "no signal" rather than crashing the polling loop.
+            0
         }
     }
 

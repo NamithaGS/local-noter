@@ -48,4 +48,15 @@ class RecordingManagerTest {
         recordingManager.updateElapsedTime()
         assertEquals(0, recordingManager.elapsedTime.first())
     }
+
+    @Test
+    fun `stopRecording fails when nothing was recording`() = runTest {
+        // Regression test: stopRecording() used to fall through to a no-op `?.apply`
+        // on a null MediaRecorder and report Result.success anyway, which let the app
+        // save a phantom note for a recording that never started.
+        val result = recordingManager.stopRecording()
+
+        assertTrue(result.isFailure)
+        assertEquals(RecordingManager.RecordingState.ERROR, recordingManager.recordingState.first())
+    }
 }
