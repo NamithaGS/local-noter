@@ -4,7 +4,9 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,8 +20,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.common.api.ApiException
 import com.noter.data.model.Note
 import com.noter.domain.RecordingManager
+import com.noter.domain.backup.DriveAuth
+import com.noter.domain.backup.DriveBackupScheduler
 import com.noter.ui.theme.CardBackground
 import com.noter.ui.theme.RecordRed
 import com.noter.ui.theme.TextSecondary
@@ -38,7 +44,7 @@ private const val LEVEL_HISTORY_SIZE = 40
 // the "no sound detected" hint doesn't flicker on ambient hiss.
 private const val SILENCE_THRESHOLD = 0.05f
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteListScreen(
     viewModel: NoteListViewModel,
@@ -46,6 +52,8 @@ fun NoteListScreen(
     onNoteClick: (String) -> Unit
 ) {
     val notes by viewModel.notes.collectAsState()
+    val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
+    val isSelectionMode = selectedNoteIds.isNotEmpty()
     val recordingState by recordingViewModel.recordingState.collectAsState()
     val elapsedTime by recordingViewModel.elapsedTime.collectAsState()
     val amplitude by recordingViewModel.amplitude.collectAsState()
@@ -54,6 +62,30 @@ fun NoteListScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        viewModel.uploadEvents.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    var isDriveConnected by remember { mutableStateOf(DriveAuth.getSignedInAccount(context) != null) }
+    val driveSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        try {
+            GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
+            isDriveConnected = true
+            DriveBackupScheduler.scheduleNext(context)
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Connected to Google Drive - notes back up daily at 6:00 AM")
+            }
+        } catch (e: ApiException) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Couldn't connect to Google Drive")
+            }
+        }
+    }
 
     // RECORD_AUDIO is a dangerous permission, so it must be requested at runtime even
     // though it's declared in the manifest. Without this, MediaRecorder.start() throws a
@@ -90,7 +122,36 @@ fun NoteListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Noter") })
+            TopAppBar(
+                title = {
+                    Text(if (isSelectionMode) "${selectedNoteIds.size} selected" else "Noter")
+                },
+                actions = {
+                    if (isSelectionMode) {
+                        TextButton(onClick = { viewModel.clearSelection() }) {
+                            Text("Cancel")
+                        }
+                        TextButton(onClick = { viewModel.uploadSelectedNotes(context) }) {
+                            Text("Upload")
+                        }
+                    } else {
+                        TextButton(onClick = {
+                            if (isDriveConnected) {
+                                DriveAuth.signOut(context)
+                                DriveBackupScheduler.cancel(context)
+                                isDriveConnected = false
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Disconnected from Google Drive")
+                                }
+                            } else {
+                                driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
+                            }
+                        }) {
+                            Text(if (isDriveConnected) "Backup: On" else "Backup: Off")
+                        }
+                    }
+                }
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
@@ -161,7 +222,21 @@ fun NoteListScreen(
                 )
                 LazyColumn {
                     items(notes) { note ->
-                        NoteItem(note = note, onClick = { onNoteClick(note.id) })
+                        NoteItem(
+                            note = note,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = note.id in selectedNoteIds,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    if (!note.uploadedToDrive) viewModel.toggleSelection(note.id)
+                                } else {
+                                    onNoteClick(note.id)
+                                }
+                            },
+                            onLongClick = {
+                                if (!note.uploadedToDrive) viewModel.toggleSelection(note.id)
+                            }
+                        )
                     }
                 }
             }
@@ -242,21 +317,48 @@ private fun VoiceLevelGraph(levels: List<Float>, modifier: Modifier = Modifier) 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NoteItem(note: Note, onClick: () -> Unit) {
-    Column(
+private fun NoteItem(
+    note: Note,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(note.title, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            TimeFormatter.formatRelativeTime(note.createdAt),
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary
-        )
-        HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+        // Already-backed-up notes can't be selected - re-selecting them would just
+        // upload the same content to Drive a second time, which is exactly what
+        // markUploaded()/getUnuploadedNotesBetween() are meant to prevent.
+        if (isSelectionMode && !note.uploadedToDrive) {
+            Checkbox(checked = isSelected, onCheckedChange = { onClick() })
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(note.title, style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row {
+                Text(
+                    TimeFormatter.formatRelativeTime(note.createdAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+                if (note.uploadedToDrive) {
+                    Text(
+                        " · Backed up",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
+        }
     }
 }

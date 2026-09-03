@@ -18,6 +18,24 @@ class NoteRepository(private val noteDao: NoteDao) {
         return noteDao.getNoteById(id)?.toDomainModel()
     }
 
+    suspend fun getNotesBetween(startMillis: Long, endMillis: Long): List<Note> {
+        return noteDao.getNotesBetween(startMillis, endMillis).map { it.toDomainModel() }
+    }
+
+    /** Notes in the range that haven't been uploaded to Drive by either the daily job or a manual upload. */
+    suspend fun getUnuploadedNotesBetween(startMillis: Long, endMillis: Long): List<Note> {
+        return noteDao.getUnuploadedNotesBetween(startMillis, endMillis).map { it.toDomainModel() }
+    }
+
+    suspend fun getNotesByIds(ids: List<String>): List<Note> {
+        return noteDao.getNotesByIds(ids).map { it.toDomainModel() }
+    }
+
+    /** Marks notes as backed up so neither the daily job nor a manual upload sends them again. */
+    suspend fun markUploaded(ids: List<String>) {
+        noteDao.markUploaded(ids)
+    }
+
     suspend fun insertNote(note: Note) {
         noteDao.insert(note.toEntity())
     }
@@ -37,7 +55,8 @@ class NoteRepository(private val noteDao: NoteDao) {
         audioPath = audioPath,
         summary = summary,
         createdAt = createdAt,
-        duration = duration
+        duration = duration,
+        uploadedToDrive = uploadedToDrive
     )
 
     private fun Note.toEntity() = NoteEntity(
@@ -47,6 +66,7 @@ class NoteRepository(private val noteDao: NoteDao) {
         audioPath = audioPath,
         summary = summary,
         createdAt = createdAt,
-        duration = duration
+        duration = duration,
+        uploadedToDrive = uploadedToDrive
     )
 }

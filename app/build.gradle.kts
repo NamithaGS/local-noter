@@ -14,8 +14,8 @@ android {
         applicationId = "com.noter"
         minSdk = 34
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "3.0"
 
         ndk {
             // libvosk.so is ~10 MB per ABI. Shipping all four would add ~40 MB to the
@@ -46,6 +46,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        resources {
+            // google-auth-library-{oauth2-http,credentials} (pulled in transitively by
+            // the Drive API client) both ship this file; its content isn't needed at
+            // runtime so excluding it is the standard fix rather than picking a side.
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/DEPENDENCIES"
+        }
+    }
 }
 
 dependencies {
@@ -72,6 +82,14 @@ dependencies {
     // Summarization via Gemini Nano through AICore. Only functional on devices that
     // ship AICore (Pixel 8+, Galaxy S24+); degrades gracefully elsewhere.
     implementation("com.google.mlkit:genai-summarization:1.0.0-beta1")
+
+    // Google Drive daily backup: Sign-In for OAuth, API client for the Drive v3 REST calls.
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("com.google.api-client:google-api-client-android:2.7.0") {
+        exclude(group = "org.apache.httpcomponents")
+    }
+    implementation("com.google.apis:google-api-services-drive:v3-rev20260823-2.0.0")
+    implementation("com.google.http-client:google-http-client-gson:1.45.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.2.0")

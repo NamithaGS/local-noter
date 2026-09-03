@@ -7,5 +7,6 @@ data class Note(
     val audioPath: String,
     val summary: String?,
     val createdAt: Long,
-    val duration: Int
+    val duration: Int,
+    val uploadedToDrive: Boolean = false
 )
