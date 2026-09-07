@@ -8,5 +8,7 @@ data class Note(
     val summary: String?,
     val createdAt: Long,
     val duration: Int,
-    val uploadedToDrive: Boolean = false
+    val uploadedToDrive: Boolean = false,
+    val manualTag: String? = null,
+    val filedToWorkDoc: Boolean = false
 )

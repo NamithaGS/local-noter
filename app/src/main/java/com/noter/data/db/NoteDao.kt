@@ -26,6 +26,19 @@ interface NoteDao {
     @Query("UPDATE notes SET uploadedToDrive = 1 WHERE id IN (:ids)")
     suspend fun markUploaded(ids: List<String>)
 
+    /** Notes already archived (pass 1) but not yet run through Work classification (pass 2). */
+    @Query(
+        "SELECT * FROM notes WHERE createdAt >= :startMillis AND createdAt < :endMillis " +
+            "AND filedToWorkDoc = 0 ORDER BY createdAt ASC"
+    )
+    suspend fun getUnfiledWorkNotesBetween(startMillis: Long, endMillis: Long): List<NoteEntity>
+
+    @Query("UPDATE notes SET filedToWorkDoc = 1 WHERE id IN (:ids)")
+    suspend fun markFiledToWorkDoc(ids: List<String>)
+
+    @Query("UPDATE notes SET manualTag = :tag WHERE id = :id")
+    suspend fun updateTag(id: String, tag: String?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(note: NoteEntity)
 

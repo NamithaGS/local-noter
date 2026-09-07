@@ -6,36 +6,39 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
+import com.google.api.services.docs.v1.DocsScopes
 import com.google.api.services.drive.DriveScopes
 
 /**
- * Wraps Google Sign-In for the daily Drive backup feature.
+ * Wraps Google Sign-In for the Drive/Docs backup feature.
  *
- * Requests only the `drive.file` scope, not full Drive access: the app can see and
- * manage only the files it creates itself. That keeps this out of Google's "sensitive
- * scope" verification review, which full Drive access would require before real users
- * could sign in.
+ * Requests `drive.file` (not full Drive access - the app can only see/manage files it
+ * creates itself, keeping this out of Google's "sensitive scope" review) plus the Docs
+ * scope needed to create and append to the per-topic Google Docs. A user who connected
+ * before the Docs scope was added will fail [getSignedInAccount]'s check below and need
+ * to reconnect via the Backup button, which re-runs consent for the full scope set.
  */
 object DriveAuth {
 
     private val DRIVE_FILE_SCOPE = Scope(DriveScopes.DRIVE_FILE)
+    private val DOCS_SCOPE = Scope(DocsScopes.DOCUMENTS)
 
     fun getSignInClient(context: Context): GoogleSignInClient {
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(DRIVE_FILE_SCOPE)
+            .requestScopes(DRIVE_FILE_SCOPE, DOCS_SCOPE)
             .build()
         return GoogleSignIn.getClient(context, options)
     }
 
     /**
-     * Returns the signed-in account only if it still holds the Drive scope - a plain
-     * "last signed in" check would also pass for a Google account signed in for
-     * something unrelated to Drive.
+     * Returns the signed-in account only if it still holds both required scopes - a
+     * plain "last signed in" check would also pass for an account that never granted
+     * Drive/Docs access, or granted it before the Docs scope was added.
      */
     fun getSignedInAccount(context: Context): GoogleSignInAccount? {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: return null
-        return if (GoogleSignIn.hasPermissions(account, DRIVE_FILE_SCOPE)) account else null
+        return if (GoogleSignIn.hasPermissions(account, DRIVE_FILE_SCOPE, DOCS_SCOPE)) account else null
     }
 
     fun signOut(context: Context) {

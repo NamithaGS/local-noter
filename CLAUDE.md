@@ -4,10 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Noter is an Android voice-notes app: it records audio, transcribes it on-device, and
-summarises the transcript on-device. Nothing is sent to a server — the privacy claim in
-the README is a design constraint, so prefer offline/on-device solutions over cloud APIs
-when adding functionality.
+Local Noter is an Android voice-notes app: it records audio, transcribes it on-device, and
+summarises the transcript on-device. Recording, transcription, and summarisation never
+touch a server — that's a design constraint, so prefer offline/on-device solutions over
+cloud APIs for that part of the app. The one deliberate exception is the opt-in Google
+Drive backup (`domain/backup/`): a user who explicitly connects an account gets a daily
+digest of their own transcripts uploaded to their own Drive - still nothing sent
+anywhere without an explicit, revocable opt-in.
 
 ## Technology Stack
 

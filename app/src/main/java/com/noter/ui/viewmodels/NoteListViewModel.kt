@@ -6,8 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
 import com.noter.domain.backup.DriveAuth
-import com.noter.domain.backup.DriveService
-import com.noter.domain.backup.NoteDigestFormatter
+import com.noter.domain.backup.NoteFiler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,9 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
 
@@ -57,9 +53,9 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     }
 
     /**
-     * Uploads the currently selected notes to Drive as a single digest file, then marks
-     * them uploaded so the automatic daily job (or a future manual upload) never sends
-     * the same note's content again.
+     * Files the currently selected notes into Drive right away - archive into
+     * AllNotes/<year>/<month>/<date> plus a Work-classification pass, via the same
+     * [NoteFiler] the automatic daily job uses - instead of waiting for the next 6AM run.
      */
     fun uploadSelectedNotes(context: Context) {
         val noteIds = _selectedNoteIds.value.toList()
@@ -80,15 +76,17 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
                         return@withContext "Selected note(s) were already backed up"
                     }
 
-                    val label = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                        .withZone(ZoneId.systemDefault())
-                        .format(Instant.now())
-                    val digest = NoteDigestFormatter.format("Manual upload $label", notes)
-
-                    DriveService(context, account).uploadDigest("Noter Manual Upload $label.txt", digest)
+                    val filer = NoteFiler(context, account)
+                    filer.archiveNotes(notes)
                     repository.markUploaded(notes.map { it.id })
 
-                    "Uploaded ${notes.size} note${if (notes.size == 1) "" else "s"} to Drive"
+                    // Manual upload runs both passes immediately rather than leaving
+                    // classification for the next daily run - the user asked for this
+                    // now, not tomorrow morning.
+                    filer.classifyNotes(notes)
+                    repository.markFiledToWorkDoc(notes.map { it.id })
+
+                    "Filed ${notes.size} note${if (notes.size == 1) "" else "s"} to Drive"
                 } catch (e: Exception) {
                     "Upload failed: ${e.message ?: "unknown error"}"
                 }

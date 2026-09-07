@@ -28,7 +28,8 @@ object DriveBackupScheduler {
 
     const val UNIQUE_WORK_NAME = "drive_daily_backup"
 
-    private val BACKUP_ZONE: ZoneId = ZoneId.of("America/Los_Angeles")
+    /** Shared with [NoteFiler] so manual and automatic filing bucket notes into the same day. */
+    val BACKUP_ZONE: ZoneId = ZoneId.of("America/Los_Angeles")
     private const val BACKUP_HOUR = 6
 
     /** (Re)schedules the next run, replacing any pending one. Safe to call repeatedly. */

@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -26,6 +27,7 @@ import com.noter.data.model.Note
 import com.noter.domain.RecordingManager
 import com.noter.domain.backup.DriveAuth
 import com.noter.domain.backup.DriveBackupScheduler
+import com.noter.ui.theme.AIBlue
 import com.noter.ui.theme.CardBackground
 import com.noter.ui.theme.RecordRed
 import com.noter.ui.theme.TextSecondary
@@ -124,7 +126,7 @@ fun NoteListScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (isSelectionMode) "${selectedNoteIds.size} selected" else "Noter")
+                    Text(if (isSelectionMode) "${selectedNoteIds.size} selected" else "Local Noter")
                 },
                 actions = {
                     if (isSelectionMode) {
@@ -147,7 +149,7 @@ fun NoteListScreen(
                                 driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
                             }
                         }) {
-                            Text(if (isDriveConnected) "Backup: On" else "Backup: Off")
+                            Text(if (isDriveConnected) "Backup & Summarize: On" else "Backup & Summarize: Off")
                         }
                     }
                 }
@@ -341,8 +343,16 @@ private fun NoteItem(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
+        // Background processing (transcription always; backup/summarization only once
+        // Drive is connected) takes real time, so the title color is the at-a-glance
+        // signal for "fully done" rather than making the user open each note to check.
+        val isFullyProcessed = note.uploadedToDrive && note.summary != null
         Column(modifier = Modifier.weight(1f)) {
-            Text(note.title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                note.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isFullyProcessed) AIBlue else Color.Unspecified
+            )
             Spacer(modifier = Modifier.height(4.dp))
             Row {
                 Text(
@@ -350,7 +360,13 @@ private fun NoteItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
-                if (note.uploadedToDrive) {
+                if (isFullyProcessed) {
+                    Text(
+                        " · Backed up & summarized",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                } else if (note.uploadedToDrive) {
                     Text(
                         " · Backed up",
                         style = MaterialTheme.typography.bodySmall,

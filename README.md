@@ -1,4 +1,4 @@
-# Noter - AI-Powered Voice Notes
+# Local Noter - AI-Powered Voice Notes
 
 A lightweight, privacy-focused Android app that records voice notes and converts them to text using on-device AI. No cloud required - your notes never leave your phone.
 
@@ -14,7 +14,7 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 **Want to just use the app?**
 
-1. Go to the [Releases page](https://github.com/NamithaGS/noter/releases)
+1. Go to the [Releases page](https://github.com/NamithaGS/local-noter/releases)
 2. Download the latest `noter-debug.apk`
 3. Install on your Android phone (Android 14+ required)
 4. Done! No development tools needed.
@@ -46,13 +46,13 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 **1. Clone the repository:**
 ```bash
-git clone https://github.com/NamithaGS/noter.git
-cd noter
+git clone https://github.com/NamithaGS/local-noter.git
+cd local-noter
 ```
 
 **2. Open in Android Studio:**
 - Launch Android Studio
-- **File → Open** → Select the `noter` folder
+- **File → Open** → Select the `local-noter` folder
 - Wait for Gradle sync to complete
 
 **3. Run on your phone:**
@@ -95,7 +95,7 @@ Done! The app installs and launches on your phone.
 ## 📁 Project Structure
 
 ```
-noter/
+local-noter/
 ├── app/src/main/java/com/noter/
 │   ├── data/               # Data layer
 │   │   ├── db/            # Room database (entities, DAOs)
@@ -296,8 +296,8 @@ Built with:
 
 ## 📞 Support
 
-- **Issues:** [GitHub Issues](https://github.com/NamithaGS/noter/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/NamithaGS/noter/discussions)
+- **Issues:** [GitHub Issues](https://github.com/NamithaGS/local-noter/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/NamithaGS/local-noter/discussions)
 
 ---
 

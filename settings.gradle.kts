@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Noter"
+rootProject.name = "Local Noter"
 include(":app")

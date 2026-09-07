@@ -39,10 +39,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
     }
@@ -58,6 +54,14 @@ android {
     }
 }
 
+kotlin {
+    // Kotlin 2.3 removed the old android { kotlinOptions { jvmTarget = "17" } } DSL in
+    // favor of this compilerOptions block.
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
@@ -69,9 +73,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
 
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
@@ -83,12 +87,18 @@ dependencies {
     // ship AICore (Pixel 8+, Galaxy S24+); degrades gracefully elsewhere.
     implementation("com.google.mlkit:genai-summarization:1.0.0-beta1")
 
-    // Google Drive daily backup: Sign-In for OAuth, API client for the Drive v3 REST calls.
+    // Free-form on-device classification (is this note Work? what topic?), also via
+    // Gemini Nano/AICore. Same device support caveats as summarization above.
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+
+    // Google Drive/Docs backup: Sign-In for OAuth, API clients for the Drive v3 and
+    // Docs v1 REST calls.
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.api-client:google-api-client-android:2.7.0") {
         exclude(group = "org.apache.httpcomponents")
     }
     implementation("com.google.apis:google-api-services-drive:v3-rev20260823-2.0.0")
+    implementation("com.google.apis:google-api-services-docs:v1-rev20260901-2.0.0")
     implementation("com.google.http-client:google-http-client-gson:1.45.0")
 
     testImplementation("junit:junit:4.13.2")
@@ -114,6 +124,6 @@ dependencies {
     // inherit from testImplementation.
     androidTestImplementation("org.mockito:mockito-android:5.2.0")
     androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
-    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("androidx.room:room-testing:2.8.4")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -36,6 +36,19 @@ class NoteRepository(private val noteDao: NoteDao) {
         noteDao.markUploaded(ids)
     }
 
+    /** Notes archived but not yet run through the Work-classification pass. */
+    suspend fun getUnfiledWorkNotesBetween(startMillis: Long, endMillis: Long): List<Note> {
+        return noteDao.getUnfiledWorkNotesBetween(startMillis, endMillis).map { it.toDomainModel() }
+    }
+
+    suspend fun markFiledToWorkDoc(ids: List<String>) {
+        noteDao.markFiledToWorkDoc(ids)
+    }
+
+    suspend fun updateTag(id: String, tag: String?) {
+        noteDao.updateTag(id, tag)
+    }
+
     suspend fun insertNote(note: Note) {
         noteDao.insert(note.toEntity())
     }
@@ -56,7 +69,9 @@ class NoteRepository(private val noteDao: NoteDao) {
         summary = summary,
         createdAt = createdAt,
         duration = duration,
-        uploadedToDrive = uploadedToDrive
+        uploadedToDrive = uploadedToDrive,
+        manualTag = manualTag,
+        filedToWorkDoc = filedToWorkDoc
     )
 
     private fun Note.toEntity() = NoteEntity(
@@ -67,6 +82,8 @@ class NoteRepository(private val noteDao: NoteDao) {
         summary = summary,
         createdAt = createdAt,
         duration = duration,
-        uploadedToDrive = uploadedToDrive
+        uploadedToDrive = uploadedToDrive,
+        manualTag = manualTag,
+        filedToWorkDoc = filedToWorkDoc
     )
 }
