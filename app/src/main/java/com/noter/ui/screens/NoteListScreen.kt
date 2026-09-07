@@ -56,6 +56,8 @@ fun NoteListScreen(
     val notes by viewModel.notes.collectAsState()
     val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
     val isSelectionMode = selectedNoteIds.isNotEmpty()
+    val isBackingUp by viewModel.isBackingUp.collectAsState()
+    val lastBackupTime by viewModel.lastBackupTime.collectAsState()
     val recordingState by recordingViewModel.recordingState.collectAsState()
     val elapsedTime by recordingViewModel.elapsedTime.collectAsState()
     val amplitude by recordingViewModel.amplitude.collectAsState()
@@ -66,6 +68,7 @@ fun NoteListScreen(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
+        viewModel.refreshLastBackupTime(context)
         viewModel.uploadEvents.collect { message ->
             snackbarHostState.showSnackbar(message)
         }
@@ -79,9 +82,7 @@ fun NoteListScreen(
             GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
             isDriveConnected = true
             DriveBackupScheduler.scheduleNext(context)
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar("Connected to Google Drive - notes back up daily at 6:00 AM")
-            }
+            viewModel.backupNow(context)
         } catch (e: ApiException) {
             coroutineScope.launch {
                 snackbarHostState.showSnackbar("Couldn't connect to Google Drive")
@@ -136,21 +137,6 @@ fun NoteListScreen(
                         TextButton(onClick = { viewModel.uploadSelectedNotes(context) }) {
                             Text("Upload")
                         }
-                    } else {
-                        TextButton(onClick = {
-                            if (isDriveConnected) {
-                                DriveAuth.signOut(context)
-                                DriveBackupScheduler.cancel(context)
-                                isDriveConnected = false
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Disconnected from Google Drive")
-                                }
-                            } else {
-                                driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
-                            }
-                        }) {
-                            Text(if (isDriveConnected) "Backup & Summarize: On" else "Backup & Summarize: Off")
-                        }
                     }
                 }
             )
@@ -162,17 +148,48 @@ fun NoteListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            RecordButton(
-                isRecording = isRecording,
-                elapsedTime = elapsedTime,
-                onClick = {
-                    when {
-                        isRecording -> recordingViewModel.stopRecording()
-                        PermissionHelper.hasRecordAudioPermission(context) -> recordingViewModel.startRecording()
-                        else -> permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                RecordButton(
+                    isRecording = isRecording,
+                    elapsedTime = elapsedTime,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        when {
+                            isRecording -> recordingViewModel.stopRecording()
+                            PermissionHelper.hasRecordAudioPermission(context) -> recordingViewModel.startRecording()
+                            else -> permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     }
-                }
-            )
+                )
+                BackupButton(
+                    isConnected = isDriveConnected,
+                    isBackingUp = isBackingUp,
+                    lastBackupTime = lastBackupTime,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        if (isDriveConnected) {
+                            viewModel.backupNow(context)
+                        } else {
+                            driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
+                        }
+                    },
+                    onLongClick = {
+                        if (isDriveConnected) {
+                            DriveAuth.signOut(context)
+                            DriveBackupScheduler.cancel(context)
+                            isDriveConnected = false
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("Disconnected from Google Drive")
+                            }
+                        }
+                    }
+                )
+            }
 
             if (isRecording) {
                 VoiceLevelGraph(
@@ -247,12 +264,14 @@ fun NoteListScreen(
 }
 
 @Composable
-private fun RecordButton(isRecording: Boolean, elapsedTime: Int, onClick: () -> Unit) {
+private fun RecordButton(
+    isRecording: Boolean,
+    elapsedTime: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .clickable(onClick = onClick),
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = CardBackground)
     ) {
@@ -261,7 +280,7 @@ private fun RecordButton(isRecording: Boolean, elapsedTime: Int, onClick: () -> 
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.size(56.dp),
                 shape = CircleShape,
                 color = RecordRed
             ) {
@@ -273,7 +292,7 @@ private fun RecordButton(isRecording: Boolean, elapsedTime: Int, onClick: () -> 
                     )
                 }
             }
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
                     if (isRecording) {
@@ -284,7 +303,72 @@ private fun RecordButton(isRecording: Boolean, elapsedTime: Int, onClick: () -> 
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    if (isRecording) "Tap to stop" else "Tap the button to begin",
+                    if (isRecording) "Tap to stop" else "Tap to begin",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Sits next to [RecordButton]. Tap either connects Google Drive (if not yet connected)
+ * or backs up every pending note right now; long-press disconnects. The subtitle is the
+ * at-a-glance freshness signal, since both backup and summarization run in the
+ * background and take real time to finish.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun BackupButton(
+    isConnected: Boolean,
+    isBackingUp: Boolean,
+    lastBackupTime: Long?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                color = if (isConnected) AIBlue else TextSecondary
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (isBackingUp) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            if (isConnected) "✓" else "○",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text("Backup & Summarize", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    when {
+                        isBackingUp -> "Backing up..."
+                        !isConnected -> "Not connected - tap to set up"
+                        lastBackupTime != null ->
+                            "Backed up ${TimeFormatter.formatRelativeTime(lastBackupTime).replaceFirstChar { it.lowercase() }}"
+                        else -> "Tap to back up now"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )

@@ -63,6 +63,9 @@ class DriveBackupWorker(
                 Log.i(TAG, "Ran Work classification on ${toClassify.size} note(s) for $yesterday")
             }
 
+            // Recorded even when there was nothing new to archive - "last backed up"
+            // means "the pipeline last ran successfully", not "last time it found work".
+            BackupStatusStore.setLastBackupTime(applicationContext, System.currentTimeMillis())
             Result.success()
         } catch (e: Exception) {
             Log.w(TAG, "Daily Drive backup failed", e)

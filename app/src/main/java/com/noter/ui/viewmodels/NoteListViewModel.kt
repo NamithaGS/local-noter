@@ -3,8 +3,10 @@ package com.noter.ui.viewmodels
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
+import com.noter.domain.backup.BackupStatusStore
 import com.noter.domain.backup.DriveAuth
 import com.noter.domain.backup.NoteFiler
 import kotlinx.coroutines.Dispatchers
@@ -30,9 +32,15 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     private val _selectedNoteIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedNoteIds: StateFlow<Set<String>> = _selectedNoteIds.asStateFlow()
 
-    // One-off UI feedback (snackbar text) for the manual upload action - a StateFlow
-    // would replay the last message on every recomposition/config change, which is
-    // wrong for something that should only ever be shown once.
+    private val _isBackingUp = MutableStateFlow(false)
+    val isBackingUp: StateFlow<Boolean> = _isBackingUp.asStateFlow()
+
+    private val _lastBackupTime = MutableStateFlow<Long?>(null)
+    val lastBackupTime: StateFlow<Long?> = _lastBackupTime.asStateFlow()
+
+    // One-off UI feedback (snackbar text) for a manual upload/backup action - a
+    // StateFlow would replay the last message on every recomposition/config change,
+    // which is wrong for something that should only ever be shown once.
     private val _uploadEvents = MutableSharedFlow<String>()
     val uploadEvents: SharedFlow<String> = _uploadEvents
 
@@ -53,6 +61,52 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     }
 
     /**
+     * Picks up the last-backup timestamp from disk - called once when the screen
+     * appears, so a background daily run that completed while the app was closed still
+     * shows up without needing a live cross-process observer for a WorkManager job.
+     */
+    fun refreshLastBackupTime(context: Context) {
+        _lastBackupTime.value = BackupStatusStore.getLastBackupTime(context)
+    }
+
+    /**
+     * Backs up every not-yet-uploaded note right now, instead of waiting for the next
+     * 6AM run - the "tap to back up now" action on the Backup and summarize button.
+     */
+    fun backupNow(context: Context) {
+        if (_isBackingUp.value) return
+
+        viewModelScope.launch {
+            _isBackingUp.value = true
+            val message = withContext(Dispatchers.IO) {
+                try {
+                    val account = DriveAuth.getSignedInAccount(context)
+                        ?: return@withContext "Connect Google Drive first"
+
+                    val pending = notes.value.filterNot { it.uploadedToDrive }
+                    if (pending.isNotEmpty()) {
+                        fileAndClassify(context, account, pending)
+                    }
+
+                    val now = System.currentTimeMillis()
+                    BackupStatusStore.setLastBackupTime(context, now)
+                    _lastBackupTime.value = now
+
+                    if (pending.isEmpty()) {
+                        "Already backed up"
+                    } else {
+                        "Backed up ${pending.size} note${if (pending.size == 1) "" else "s"}"
+                    }
+                } catch (e: Exception) {
+                    "Backup failed: ${e.message ?: "unknown error"}"
+                }
+            }
+            _isBackingUp.value = false
+            _uploadEvents.emit(message)
+        }
+    }
+
+    /**
      * Files the currently selected notes into Drive right away - archive into
      * AllNotes/<year>/<month>/<date> plus a Work-classification pass, via the same
      * [NoteFiler] the automatic daily job uses - instead of waiting for the next 6AM run.
@@ -65,7 +119,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
             val message = withContext(Dispatchers.IO) {
                 try {
                     val account = DriveAuth.getSignedInAccount(context)
-                        ?: return@withContext "Connect Google Drive first (Backup button above)"
+                        ?: return@withContext "Connect Google Drive first"
 
                     // Re-filter here even though the UI already hides uploaded notes
                     // from selection: the DB is the source of truth, and a note could
@@ -76,15 +130,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
                         return@withContext "Selected note(s) were already backed up"
                     }
 
-                    val filer = NoteFiler(context, account)
-                    filer.archiveNotes(notes)
-                    repository.markUploaded(notes.map { it.id })
-
-                    // Manual upload runs both passes immediately rather than leaving
-                    // classification for the next daily run - the user asked for this
-                    // now, not tomorrow morning.
-                    filer.classifyNotes(notes)
-                    repository.markFiledToWorkDoc(notes.map { it.id })
+                    fileAndClassify(context, account, notes)
 
                     "Filed ${notes.size} note${if (notes.size == 1) "" else "s"} to Drive"
                 } catch (e: Exception) {
@@ -95,5 +141,17 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
             _uploadEvents.emit(message)
             clearSelection()
         }
+    }
+
+    /** Shared by [backupNow] and [uploadSelectedNotes] so both run the exact same filing logic. */
+    private suspend fun fileAndClassify(context: Context, account: GoogleSignInAccount, notes: List<Note>) {
+        val filer = NoteFiler(context, account)
+        filer.archiveNotes(notes)
+        repository.markUploaded(notes.map { it.id })
+
+        // Both callers run classification immediately rather than leaving it for the
+        // next daily run - the user asked for this now, not tomorrow morning.
+        filer.classifyNotes(notes)
+        repository.markFiledToWorkDoc(notes.map { it.id })
     }
 }
