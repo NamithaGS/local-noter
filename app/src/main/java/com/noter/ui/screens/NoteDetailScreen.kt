@@ -81,15 +81,15 @@ fun NoteDetailScreen(
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // A manual tag always wins over on-device classification (see
-                // WorkClassifier) - it's the reliable way to route this note to a
-                // specific Work topic doc instead of leaving it to the model's guess.
+                // The tag is the only signal used to route this note's summary to a
+                // SummarizedNotes/<tag> doc - see NoteFiler.summarizeNotes. No tag means
+                // this note's summary never gets filed anywhere by topic.
                 var tagInput by remember(note?.id) { mutableStateOf(note?.manualTag.orEmpty()) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = tagInput,
                         onValueChange = { tagInput = it },
-                        label = { Text("Work topic tag (optional)") },
+                        label = { Text("Topic tag (optional)") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )

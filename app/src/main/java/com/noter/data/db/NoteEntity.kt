@@ -14,13 +14,15 @@ data class NoteEntity(
     val createdAt: Long,
     val duration: Int,
     // Archived into the AllNotes/<year>/<month>/<date> doc yet? (name kept from when
-    // this was the only Drive step, before Work-doc filing was added as a second pass)
+    // this was the only Drive step, before SummarizedNotes filing was added as a second pass)
     val uploadedToDrive: Boolean = false,
-    // User-supplied hint for classification - set directly, it's used as-is for both
-    // "is this Work?" and the topic doc name, skipping on-device classification entirely.
+    // User-supplied topic - the only source of a note's SummarizedNotes/<tag> doc name;
+    // a note with no tag simply doesn't get filed there. No more on-device classification
+    // step guessing a topic - tags are a direct, unambiguous signal, and Gemini Nano's
+    // reliability issues make it a poor thing to depend on for this.
     val manualTag: String? = null,
-    // Whether the Work-classification pass (see DriveBackupWorker) has already run for
-    // this note. Separate from uploadedToDrive so archiving and classification can be
-    // two independent passes, each idempotent on its own.
-    val filedToWorkDoc: Boolean = false
+    // Whether the summarize-and-file pass (see DriveBackupWorker) has already run for
+    // this note. Separate from uploadedToDrive so archiving and summarizing are two
+    // independent passes, each idempotent on its own.
+    val filedToSummary: Boolean = false
 )

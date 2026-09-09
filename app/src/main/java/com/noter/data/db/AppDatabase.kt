@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [NoteEntity::class], version = 3, exportSchema = false)
+@Database(entities = [NoteEntity::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
 
@@ -21,8 +21,9 @@ abstract class AppDatabase : RoomDatabase() {
                     "noter_database"
                 )
                     // No migration path exists yet for these schema bumps (uploadedToDrive,
-                    // then manualTag/filedToWorkDoc). Acceptable pre-release, where a schema
-                    // bump can just wipe local data; needs a real Migration before release.
+                    // then manualTag/filedToWorkDoc, then renaming that to filedToSummary).
+                    // Acceptable pre-release, where a schema bump can just wipe local data;
+                    // needs a real Migration before release.
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

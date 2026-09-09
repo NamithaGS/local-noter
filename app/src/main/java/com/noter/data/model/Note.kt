@@ -10,5 +10,5 @@ data class Note(
     val duration: Int,
     val uploadedToDrive: Boolean = false,
     val manualTag: String? = null,
-    val filedToWorkDoc: Boolean = false
+    val filedToSummary: Boolean = false
 )

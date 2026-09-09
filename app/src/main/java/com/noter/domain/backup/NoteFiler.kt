@@ -3,7 +3,6 @@ package com.noter.domain.backup
 import android.content.Context
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.noter.data.model.Note
-import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -26,17 +25,16 @@ import java.util.Locale
 class NoteFiler(context: Context, account: GoogleSignInAccount) {
 
     private val driveService = DriveService(context, account)
-    private val classifier = WorkClassifier(context)
 
     // Resolved once per NoteFiler instance (one per backup run) and reused by both
-    // archiveNotes and classifyNotes, so AllNotes/ and Work/ always land under the same
-    // root instead of each call re-resolving it independently.
+    // archiveNotes and summarizeNotes, so AllNotes/ and SummarizedNotes/ always land
+    // under the same root instead of each call re-resolving it independently.
     private val rootFolderId: String by lazy { driveService.findOrCreateFolder(ROOT_FOLDER) }
 
     /**
-     * Archives [notes] into `LocalNoter/AllNotes/<year>/<month>/<date>`, grouped by each
-     * note's own creation date - a complete chronological record regardless of Work
-     * classification.
+     * Backs up [notes] into `LocalNoter/AllNotes/<year>/<month>/<date>`, grouped by each
+     * note's own creation date - a complete chronological record of every note (full
+     * transcript, plus its summary if one exists yet), regardless of topic.
      */
     fun archiveNotes(notes: List<Note>) {
         if (notes.isEmpty()) return
@@ -56,49 +54,32 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
     }
 
     /**
-     * Classifies each of [notes] (manual tag first, on-device AI otherwise - see
-     * [WorkClassifier]) and appends Work-classified ones to their topic doc under
-     * `LocalNoter/Work/<topic>`. Notes classified as not-work are left out of Work
-     * entirely, per "there has to be a Work folder only" - nothing else gets filed there.
+     * Files each of [notes] that has both a manual tag and an existing AI summary into
+     * `LocalNoter/SummarizedNotes/<tag>` - just the summary, dated with the note's
+     * creation time as a small heading, not the full transcript ([archiveNotes] already
+     * covers that). The topic doc is created the first time a tag is seen, then reused
+     * (found, not recreated) on every later note with that same tag.
      *
-     * A Work-classified note that already has an AI summary at this point also gets that
-     * summary appended to `LocalNoter/SummarizedNotes/<topic>` (same topic as its Work
-     * doc). A note with no summary yet - the common case while Gemini Nano isn't
-     * producing one - is simply left out of SummarizedNotes; there's no separate
-     * retry/backfill pass for this, matching how Work classification itself is only
-     * ever attempted once per note.
+     * A note with no tag isn't filed anywhere here - tags are the only topic signal now,
+     * no on-device classification guessing one. A note with no summary yet (the common
+     * case while Gemini Nano isn't producing one - see [SummarizationConfig]) is simply
+     * left out for this pass; there's no separate retry/backfill once one shows up later.
      */
-    suspend fun classifyNotes(notes: List<Note>) {
+    fun summarizeNotes(notes: List<Note>) {
         if (notes.isEmpty()) return
 
-        var workFolderId: String? = null
-        var summarizedNotesFolderId: String? = null
+        var summarizedFolderId: String? = null
         notes.forEach { note ->
-            val transcript = readTranscript(note)
-            when (val result = classifier.classify(transcript, note.manualTag)) {
-                is WorkClassification.Work -> {
-                    val folderId = workFolderId
-                        ?: driveService.findOrCreateFolder(WORK_FOLDER, rootFolderId).also { workFolderId = it }
-                    val topicDocId = driveService.findOrCreateDoc(result.topic, folderId)
-                    driveService.appendToDoc(topicDocId, NoteSectionFormatter.format(note))
+            val topic = note.manualTag?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEach
+            val summary = note.summary ?: return@forEach
 
-                    note.summary?.let { summary ->
-                        val summarizedFolderId = summarizedNotesFolderId
-                            ?: driveService.findOrCreateFolder(SUMMARIZED_NOTES_FOLDER, rootFolderId)
-                                .also { summarizedNotesFolderId = it }
-                        val summaryDocId = driveService.findOrCreateDoc(result.topic, summarizedFolderId)
-                        driveService.appendToDoc(summaryDocId, NoteSectionFormatter.formatSummary(note, summary))
-                    }
-                }
-                WorkClassification.NotWork -> Unit
-            }
+            val folderId = summarizedFolderId
+                ?: driveService.findOrCreateFolder(SUMMARIZED_NOTES_FOLDER, rootFolderId)
+                    .also { summarizedFolderId = it }
+            val topicDocId = driveService.findOrCreateDoc(topic, folderId)
+            val entry = NoteSectionFormatter.formatSummaryEntry(note, summary)
+            driveService.appendToDocWithHeading(topicDocId, entry.heading, entry.body)
         }
-    }
-
-    private fun readTranscript(note: Note): String {
-        if (note.transcriptPath.isBlank()) return ""
-        val file = File(note.transcriptPath)
-        return if (file.exists()) file.readText() else ""
     }
 
     private fun monthFolderName(date: LocalDate): String {
@@ -109,7 +90,6 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
     private companion object {
         const val ROOT_FOLDER = "LocalNoter"
         const val ALL_NOTES_FOLDER = "AllNotes"
-        const val WORK_FOLDER = "Work"
         const val SUMMARIZED_NOTES_FOLDER = "SummarizedNotes"
     }
 }

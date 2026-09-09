@@ -58,10 +58,10 @@ class NoteDetailViewModel(private val repository: NoteRepository) : ViewModel() 
     }
 
     /**
-     * Sets (or clears, if [tag] is blank) the manual classification hint for this note -
-     * see [com.noter.domain.backup.WorkClassifier]. A tag always wins over on-device AI
-     * classification, so this is the reliable way to route a note to a specific Work
-     * topic doc instead of leaving it to the model's best guess.
+     * Sets (or clears, if [tag] is blank) this note's topic - see
+     * [com.noter.domain.backup.NoteFiler.summarizeNotes]. This is the only signal used to
+     * route a note's summary to a `SummarizedNotes/<tag>` doc; a note with no tag isn't
+     * filed there at all.
      */
     fun updateTag(noteId: String, tag: String) {
         viewModelScope.launch {

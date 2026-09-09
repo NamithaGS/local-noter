@@ -8,8 +8,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Formats a single note as a dated section appended to an archive or Work topic Google
- * Doc - the same note gets formatted identically regardless of which doc it lands in.
+ * Formats a single note as a dated section appended to an AllNotes archive doc - the same
+ * note gets formatted identically regardless of which dated doc it lands in.
  */
 object NoteSectionFormatter {
 
@@ -34,20 +34,27 @@ object NoteSectionFormatter {
         appendLine("---")
     }
 
+    /** One entry for a `SummarizedNotes/<tag>` doc: [heading] is styled as a small
+     * heading by [DriveService.appendToDocWithHeading]; [body] is plain text below it. */
+    data class SummaryEntry(val heading: String, val body: String)
+
     /**
-     * Formats one note's AI summary as a dated section for a `SummarizedNotes/<topic>`
-     * doc - just the timestamp, title and summary, deliberately leaving out the full
-     * transcript that [format] includes, since the point of that doc is a condensed
+     * Formats one note's AI summary as a dated entry for a `SummarizedNotes/<tag>` doc -
+     * the date/time as the heading (per-entry, since a topic doc holds many notes over
+     * time), followed by the note's title and its summary. Deliberately leaves out the
+     * full transcript that [format] includes, since the point of this doc is a condensed
      * per-topic view.
      */
-    fun formatSummary(note: Note, summary: String): String = buildString {
-        appendLine()
-        appendLine(TIMESTAMP_FORMAT.format(Date(note.createdAt)))
-        appendLine(note.title)
-        appendLine()
-        appendLine(summary)
-        appendLine()
-        appendLine("---")
+    fun formatSummaryEntry(note: Note, summary: String): SummaryEntry {
+        val heading = TIMESTAMP_FORMAT.format(Date(note.createdAt))
+        val body = buildString {
+            appendLine(note.title)
+            appendLine()
+            appendLine(summary)
+            appendLine()
+            appendLine("---")
+        }
+        return SummaryEntry(heading, body)
     }
 
     private fun readTranscript(note: Note): String {

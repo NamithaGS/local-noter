@@ -13,16 +13,17 @@ import java.time.LocalDate
 /**
  * Two-pass daily job, run once via [DriveBackupScheduler]:
  *
- * Pass 1 (archive): every note from yesterday gets appended to a dated doc under
- * `AllNotes/<year>/<month>`, regardless of content - a complete chronological record.
+ * Pass 1 (backup): every note from yesterday - its full transcript, plus its summary if
+ * it has one - gets appended to a dated doc under `AllNotes/<year>/<month>`, regardless
+ * of topic - a complete chronological record.
  *
- * Pass 2 (classify): runs only after pass 1 finishes, per "once the day's notes are
- * archived, do one more pass of classification" - each of those same notes gets
- * classified (manual tag, or on-device AI - see [WorkClassifier]) and, if Work,
- * appended to its topic doc under `Work/<topic>`.
+ * Pass 2 (summarize): runs only after pass 1 finishes, per "once the day's notes are
+ * archived, do one more pass" - each of those same notes that has both a manual tag and
+ * an existing summary gets that summary appended to its topic doc under
+ * `SummarizedNotes/<tag>`. A note with no tag, or no summary yet, is left out of this pass.
  *
  * Both passes are independently idempotent (guarded by `uploadedToDrive` /
- * `filedToWorkDoc`), so a retry after a partial failure never double-appends a note, and
+ * `filedToSummary`), so a retry after a partial failure never double-appends a note, and
  * reschedules itself for the next day regardless of outcome so one bad morning doesn't
  * break the whole chain.
  */
@@ -56,11 +57,11 @@ class DriveBackupWorker(
                 Log.i(TAG, "No new notes to archive for $yesterday")
             }
 
-            val toClassify = repository.getUnfiledWorkNotesBetween(startMillis, endMillis)
-            if (toClassify.isNotEmpty()) {
-                filer.classifyNotes(toClassify)
-                repository.markFiledToWorkDoc(toClassify.map { it.id })
-                Log.i(TAG, "Ran Work classification on ${toClassify.size} note(s) for $yesterday")
+            val toSummarize = repository.getUnsummarizedNotesBetween(startMillis, endMillis)
+            if (toSummarize.isNotEmpty()) {
+                filer.summarizeNotes(toSummarize)
+                repository.markFiledToSummary(toSummarize.map { it.id })
+                Log.i(TAG, "Ran summarize-and-file pass on ${toSummarize.size} note(s) for $yesterday")
             }
 
             // Recorded even when there was nothing new to archive - "last backed up"

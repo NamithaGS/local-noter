@@ -95,7 +95,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
 
                     val pending = notes.value.filterNot { it.uploadedToDrive }
                     if (pending.isNotEmpty()) {
-                        fileAndClassify(context, account, pending)
+                        backupAndSummarize(context, account, pending)
                     }
 
                     val now = System.currentTimeMillis()
@@ -117,8 +117,8 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     }
 
     /**
-     * Files the currently selected notes into Drive right away - archive into
-     * AllNotes/<year>/<month>/<date> plus a Work-classification pass, via the same
+     * Files the currently selected notes into Drive right away - backup into
+     * AllNotes/<year>/<month>/<date> plus the summarize-and-file pass, via the same
      * [NoteFiler] the automatic daily job uses - instead of waiting for the next 6AM run.
      */
     fun uploadSelectedNotes(context: Context) {
@@ -140,7 +140,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
                         return@withContext "Selected note(s) were already backed up"
                     }
 
-                    fileAndClassify(context, account, notes)
+                    backupAndSummarize(context, account, notes)
 
                     "Filed ${notes.size} note${if (notes.size == 1) "" else "s"} to Drive"
                 } catch (e: Exception) {
@@ -186,15 +186,15 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     }
 
     /** Shared by [backupNow] and [uploadSelectedNotes] so both run the exact same filing logic. */
-    private suspend fun fileAndClassify(context: Context, account: GoogleSignInAccount, notes: List<Note>) {
+    private suspend fun backupAndSummarize(context: Context, account: GoogleSignInAccount, notes: List<Note>) {
         val filer = NoteFiler(context, account)
         filer.archiveNotes(notes)
         repository.markUploaded(notes.map { it.id })
 
-        // Both callers run classification immediately rather than leaving it for the
-        // next daily run - the user asked for this now, not tomorrow morning.
-        filer.classifyNotes(notes)
-        repository.markFiledToWorkDoc(notes.map { it.id })
+        // Both callers run the summarize-and-file pass immediately rather than leaving it
+        // for the next daily run - the user asked for this now, not tomorrow morning.
+        filer.summarizeNotes(notes)
+        repository.markFiledToSummary(notes.map { it.id })
     }
 
     /**

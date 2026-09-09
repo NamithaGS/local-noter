@@ -10,15 +10,19 @@ import com.google.api.services.docs.v1.DocsScopes
 import com.google.api.services.docs.v1.model.BatchUpdateDocumentRequest
 import com.google.api.services.docs.v1.model.EndOfSegmentLocation
 import com.google.api.services.docs.v1.model.InsertTextRequest
+import com.google.api.services.docs.v1.model.Location
+import com.google.api.services.docs.v1.model.ParagraphStyle
+import com.google.api.services.docs.v1.model.Range
 import com.google.api.services.docs.v1.model.Request
+import com.google.api.services.docs.v1.model.UpdateParagraphStyleRequest
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 
 /**
  * Drive/Docs operations backing the note-filing pipeline: navigating (and creating, on
- * first use) the AllNotes/<year>/<month> archive hierarchy and the Work/<topic> doc
- * hierarchy, and appending dated sections to whichever doc a note belongs in.
+ * first use) the AllNotes/<year>/<month> archive hierarchy and the SummarizedNotes/<tag>
+ * doc hierarchy, and appending dated sections to whichever doc a note belongs in.
  *
  * Scoped to `drive.file` + Docs (see [DriveAuth]): this can only see and manage files it
  * created itself, and can only edit Doc content through the Docs API for docs it created
@@ -91,6 +95,53 @@ class DriveService(context: Context, account: GoogleSignInAccount) {
             .execute()
     }
 
+    /**
+     * Appends [heading] - styled as a small heading paragraph - followed by [body] (plain
+     * text) to the end of the doc identified by [documentId].
+     *
+     * Unlike [appendToDoc]'s single `EndOfSegmentLocation` insert, styling the heading
+     * needs a concrete character range to target with a follow-up `updateParagraphStyle`
+     * request - `EndOfSegmentLocation` has no such range to give it. So this fetches the
+     * document's current length first, inserts both pieces of text at that explicit
+     * index, then styles just the heading's range - both requests in one `batchUpdate`
+     * call, since the Docs API applies a batch's requests in order and accounts for each
+     * one's effect on the indices used by the next.
+     */
+    fun appendToDocWithHeading(documentId: String, heading: String, body: String) {
+        val document = docs.documents().get(documentId).execute()
+        // A Doc's body always ends with an implicit trailing newline that can't be
+        // written into directly, so the last insertable position is one index before it.
+        // A brand-new empty doc's only segment ends at index 1 - clamping to 1 avoids
+        // computing index 0, which the API rejects (valid indices start at 1).
+        val insertAt = ((document.body?.content?.lastOrNull()?.endIndex ?: 1) - 1).coerceAtLeast(1)
+
+        val separator = "\n"
+        val headingLine = "$heading\n"
+        val headingStart = insertAt + separator.length
+        val headingEnd = headingStart + headingLine.length
+
+        val insertRequest = Request().setInsertText(
+            InsertTextRequest()
+                .setText(separator + headingLine + body)
+                .setLocation(Location().setIndex(insertAt))
+        )
+        // The style range must include the heading's terminating newline - that's how the
+        // Docs API delimits "this paragraph" for a paragraph-level style like a heading.
+        val styleRequest = Request().setUpdateParagraphStyle(
+            UpdateParagraphStyleRequest()
+                .setRange(Range().setStartIndex(headingStart).setEndIndex(headingEnd))
+                .setParagraphStyle(ParagraphStyle().setNamedStyleType(HEADING_STYLE))
+                .setFields("namedStyleType")
+        )
+
+        docs.documents()
+            .batchUpdate(
+                documentId,
+                BatchUpdateDocumentRequest().setRequests(listOf(insertRequest, styleRequest))
+            )
+            .execute()
+    }
+
     private fun findChild(name: String, mimeType: String, parentId: String?): String? {
         val escapedName = name.replace("\\", "\\\\").replace("'", "\\'")
         val parentClause = if (parentId != null) " and '$parentId' in parents" else ""
@@ -110,5 +161,9 @@ class DriveService(context: Context, account: GoogleSignInAccount) {
     private companion object {
         const val MIME_FOLDER = "application/vnd.google-apps.folder"
         const val MIME_DOCUMENT = "application/vnd.google-apps.document"
+
+        // HEADING_4 rather than HEADING_1-3: a per-entry date/time stamp should read as a
+        // small marker within the topic doc, not compete with the doc's own title.
+        const val HEADING_STYLE = "HEADING_4"
     }
 }
