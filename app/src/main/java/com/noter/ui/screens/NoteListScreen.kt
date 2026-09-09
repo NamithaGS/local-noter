@@ -21,7 +21,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import com.noter.data.model.Note
@@ -31,6 +36,7 @@ import com.noter.domain.backup.DriveBackupScheduler
 import com.noter.ui.theme.AIBlue
 import com.noter.ui.theme.CardBackground
 import com.noter.ui.theme.RecordRed
+import com.noter.ui.theme.TextPrimary
 import com.noter.ui.theme.TextSecondary
 import com.noter.ui.viewmodels.NoteListViewModel
 import com.noter.ui.viewmodels.RecordingViewModel
@@ -128,7 +134,26 @@ fun NoteListScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (isSelectionMode) "${selectedNoteIds.size} selected" else "Local Noter")
+                    if (isSelectionMode) {
+                        Text(
+                            "${selectedNoteIds.size} selected",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        // Two-tone wordmark instead of a plain title - "Noter" picked out
+                        // in the same blue used for the AI/backup affordances elsewhere,
+                        // so the app name itself hints at what the app does.
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(SpanStyle(color = TextPrimary)) { append("Local ") }
+                                withStyle(SpanStyle(color = AIBlue)) { append("Noter") }
+                            },
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 },
                 actions = {
                     if (isSelectionMode) {
