@@ -54,7 +54,11 @@ class NoteSummarizer(private val context: Context) {
         }
 
         val options = SummarizerOptions.builder(context)
-            .setInputType(SummarizerOptions.InputType.ARTICLE)
+            // CONVERSATION, not ARTICLE: these are spoken voice-note transcripts, not
+            // formal written text. ARTICLE also turned out to enforce its own internal
+            // minimum length (400 chars) independent of MIN_TRANSCRIPT_LENGTH below,
+            // which rejected completely normal short notes outright.
+            .setInputType(SummarizerOptions.InputType.CONVERSATION)
             .setOutputType(SummarizerOptions.OutputType.THREE_BULLETS)
             .setLanguage(SummarizerOptions.Language.ENGLISH)
             // Recordings can easily exceed the model's context window; truncating beats

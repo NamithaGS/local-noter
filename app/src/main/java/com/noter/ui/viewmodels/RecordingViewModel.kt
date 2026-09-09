@@ -47,7 +47,9 @@ class RecordingViewModel(
             viewModelScope.launch {
                 val note = Note(
                     id = currentNoteId!!,
-                    title = "Recording...",
+                    // Recording has already stopped by this point - transcription runs
+                    // next in the background - so "Recording..." would be misleading here.
+                    title = "Transcribing...",
                     transcriptPath = "",
                     audioPath = audioPath,
                     summary = null,

@@ -1,6 +1,7 @@
 package com.noter.ui.viewmodels
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -98,7 +99,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
                         "Backed up ${pending.size} note${if (pending.size == 1) "" else "s"}"
                     }
                 } catch (e: Exception) {
-                    "Backup failed: ${e.message ?: "unknown error"}"
+                    "Backup failed: ${describeError(e)}"
                 }
             }
             _isBackingUp.value = false
@@ -134,7 +135,7 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
 
                     "Filed ${notes.size} note${if (notes.size == 1) "" else "s"} to Drive"
                 } catch (e: Exception) {
-                    "Upload failed: ${e.message ?: "unknown error"}"
+                    "Upload failed: ${describeError(e)}"
                 }
             }
 
@@ -153,5 +154,27 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
         // next daily run - the user asked for this now, not tomorrow morning.
         filer.classifyNotes(notes)
         repository.markFiledToWorkDoc(notes.map { it.id })
+    }
+
+    /**
+     * Turns a caught [Exception] into user-facing text for the snackbar.
+     *
+     * Many exceptions thrown by the Drive/Docs SDKs (e.g. an IOException from a network
+     * failure) carry a null or unhelpful `message`, which is what previously surfaced as
+     * a bare "unknown error" - useless for the user and for us when they report it. The
+     * full exception (with stack trace) is always logged to logcat first so it can be
+     * pulled from a bug report; the class name is used as a fallback label instead of a
+     * generic string so at least the *kind* of failure (timeout, auth, I/O, ...) is visible.
+     *
+     * @param e the exception caught around a backup/upload attempt
+     * @return a short human-readable description of [e], suitable for a snackbar
+     */
+    private fun describeError(e: Exception): String {
+        Log.e(TAG, "Drive backup/upload failed", e)
+        return e.message ?: e.javaClass.simpleName
+    }
+
+    private companion object {
+        const val TAG = "NoteListViewModel"
     }
 }

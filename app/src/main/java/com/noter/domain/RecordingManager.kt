@@ -37,7 +37,14 @@ class RecordingManager(private val context: Context) {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
+                // MIC is the "raw" source - many devices apply little to no automatic
+                // gain control on it, so normal speaking volume can come through too
+                // quiet for Vosk to pick up ("need to shout for it to detect"). Android
+                // documents VOICE_COMMUNICATION as taking advantage of AGC when the
+                // device has it, which is exactly the boost quiet speech needs here;
+                // the echo cancellation it also enables is a no-op for us since there's
+                // no simultaneous playback to cancel.
+                setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 // Recorded to match what the Vosk models expect, so transcription can
