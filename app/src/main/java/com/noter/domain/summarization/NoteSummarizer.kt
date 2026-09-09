@@ -144,7 +144,11 @@ class NoteSummarizer(private val context: Context) {
     private companion object {
         const val TAG = "NoteSummarizer"
 
-        /** Below this length a "summary" would be as long as the transcript. */
-        const val MIN_TRANSCRIPT_LENGTH = 200
+        /**
+         * Below this length a "summary" would be as long as the transcript. 200 was too
+         * aggressive for real voice notes - a 154-char transcript is a completely normal
+         * short note, not an edge case to skip.
+         */
+        const val MIN_TRANSCRIPT_LENGTH = 40
     }
 }

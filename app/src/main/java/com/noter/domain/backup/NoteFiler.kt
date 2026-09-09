@@ -14,23 +14,37 @@ import java.util.Locale
  * and the manual on-demand upload (arbitrary selection), so both paths append through
  * the exact same Drive/Docs calls and doc-naming rules instead of two implementations
  * that could quietly drift apart.
+ *
+ * Everything nests under one `LocalNoter` root folder that this class creates itself.
+ * That's deliberate, not incidental: under the `drive.file` OAuth scope, the app can
+ * only see and write files/folders it created (or that were explicitly picked via
+ * Drive's file picker, which this app doesn't use) - so creating one root folder here
+ * is what makes "the app can only touch this one folder tree" a real, Google-enforced
+ * guarantee rather than just a promise in this code. A folder the user creates manually
+ * in Drive is invisible to the app regardless of OAuth consent, by design.
  */
 class NoteFiler(context: Context, account: GoogleSignInAccount) {
 
     private val driveService = DriveService(context, account)
     private val classifier = WorkClassifier(context)
 
+    // Resolved once per NoteFiler instance (one per backup run) and reused by both
+    // archiveNotes and classifyNotes, so AllNotes/ and Work/ always land under the same
+    // root instead of each call re-resolving it independently.
+    private val rootFolderId: String by lazy { driveService.findOrCreateFolder(ROOT_FOLDER) }
+
     /**
-     * Archives [notes] into `AllNotes/<year>/<month>/<date>`, grouped by each note's own
-     * creation date - a complete chronological record regardless of Work classification.
+     * Archives [notes] into `LocalNoter/AllNotes/<year>/<month>/<date>`, grouped by each
+     * note's own creation date - a complete chronological record regardless of Work
+     * classification.
      */
     fun archiveNotes(notes: List<Note>) {
         if (notes.isEmpty()) return
 
+        val allNotesId = driveService.findOrCreateFolder(ALL_NOTES_FOLDER, rootFolderId)
         notes.groupBy { note ->
             LocalDate.ofInstant(Instant.ofEpochMilli(note.createdAt), DriveBackupScheduler.BACKUP_ZONE)
         }.forEach { (date, notesForDate) ->
-            val allNotesId = driveService.findOrCreateFolder(ALL_NOTES_FOLDER)
             val yearId = driveService.findOrCreateFolder(date.year.toString(), allNotesId)
             val monthId = driveService.findOrCreateFolder(monthFolderName(date), yearId)
             val dayDocId = driveService.findOrCreateDoc(date.toString(), monthId)
@@ -44,8 +58,8 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
     /**
      * Classifies each of [notes] (manual tag first, on-device AI otherwise - see
      * [WorkClassifier]) and appends Work-classified ones to their topic doc under
-     * `Work/<topic>`. Notes classified as not-work are left out of Work entirely, per
-     * "there has to be a Work folder only" - nothing else gets filed there.
+     * `LocalNoter/Work/<topic>`. Notes classified as not-work are left out of Work
+     * entirely, per "there has to be a Work folder only" - nothing else gets filed there.
      */
     suspend fun classifyNotes(notes: List<Note>) {
         if (notes.isEmpty()) return
@@ -56,7 +70,7 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
             when (val result = classifier.classify(transcript, note.manualTag)) {
                 is WorkClassification.Work -> {
                     val folderId = workFolderId
-                        ?: driveService.findOrCreateFolder(WORK_FOLDER).also { workFolderId = it }
+                        ?: driveService.findOrCreateFolder(WORK_FOLDER, rootFolderId).also { workFolderId = it }
                     val topicDocId = driveService.findOrCreateDoc(result.topic, folderId)
                     driveService.appendToDoc(topicDocId, NoteSectionFormatter.format(note))
                 }
@@ -77,6 +91,7 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
     }
 
     private companion object {
+        const val ROOT_FOLDER = "LocalNoter"
         const val ALL_NOTES_FOLDER = "AllNotes"
         const val WORK_FOLDER = "Work"
     }

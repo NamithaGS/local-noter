@@ -130,7 +130,7 @@ class NoteListScreenTest {
     }
 
     @Test
-    fun notesListShowsHeader() {
+    fun notesListShowsDateHeader() {
         val testNotes = listOf(
             Note("1", "Note 1", "/t1.txt", "/a1.m4a", null, System.currentTimeMillis(), 60)
         )
@@ -147,7 +147,8 @@ class NoteListScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("NOTES LIST").assertIsDisplayed()
+        // Notes are grouped by day - a note created just now falls under "Today".
+        composeTestRule.onNodeWithText("TODAY").assertIsDisplayed()
     }
 
     @Test
@@ -174,7 +175,7 @@ class NoteListScreenTest {
     }
 
     @Test
-    fun emptyStateHidesNotesList() {
+    fun emptyStateHidesDateHeader() {
         composeTestRule.setContent {
             NoterTheme {
                 NoteListScreen(
@@ -185,6 +186,6 @@ class NoteListScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("NOTES LIST").assertDoesNotExist()
+        composeTestRule.onNodeWithText("TODAY").assertDoesNotExist()
     }
 }

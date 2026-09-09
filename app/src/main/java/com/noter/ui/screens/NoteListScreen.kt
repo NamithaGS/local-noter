@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -151,13 +152,17 @@ fun NoteListScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    // Without this, each card sizes to its own content and they end up
+                    // different heights whenever one label wraps to more lines than the
+                    // other (e.g. "Backup & Summarize" vs "Start Recording").
+                    .height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 RecordButton(
                     isRecording = isRecording,
                     elapsedTime = elapsedTime,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     onClick = {
                         when {
                             isRecording -> recordingViewModel.stopRecording()
@@ -170,7 +175,7 @@ fun NoteListScreen(
                     isConnected = isDriveConnected,
                     isBackingUp = isBackingUp,
                     lastBackupTime = lastBackupTime,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     onClick = {
                         if (isDriveConnected) {
                             viewModel.backupNow(context)
@@ -233,29 +238,40 @@ fun NoteListScreen(
                     )
                 }
             } else {
-                Text(
-                    "NOTES LIST",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                LazyColumn {
-                    items(notes) { note ->
-                        NoteItem(
-                            note = note,
-                            isSelectionMode = isSelectionMode,
-                            isSelected = note.id in selectedNoteIds,
-                            onClick = {
-                                if (isSelectionMode) {
+                // notes is already createdAt DESC from the DAO query, so groupBy's
+                // insertion-order-preserving map naturally yields "Today" before
+                // "Yesterday" before older dates without any extra sorting here.
+                val notesByDate = notes.groupBy { TimeFormatter.formatDateHeader(it.createdAt) }
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    notesByDate.forEach { (dateLabel, notesForDate) ->
+                        item(key = dateLabel) {
+                            Text(
+                                dateLabel.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(notesForDate, key = { it.id }) { note ->
+                            NoteItem(
+                                note = note,
+                                isSelectionMode = isSelectionMode,
+                                isSelected = note.id in selectedNoteIds,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        if (!note.uploadedToDrive) viewModel.toggleSelection(note.id)
+                                    } else {
+                                        onNoteClick(note.id)
+                                    }
+                                },
+                                onLongClick = {
                                     if (!note.uploadedToDrive) viewModel.toggleSelection(note.id)
-                                } else {
-                                    onNoteClick(note.id)
                                 }
-                            },
-                            onLongClick = {
-                                if (!note.uploadedToDrive) viewModel.toggleSelection(note.id)
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -412,53 +428,56 @@ private fun NoteItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground)
     ) {
-        // Already-backed-up notes can't be selected - re-selecting them would just
-        // upload the same content to Drive a second time, which is exactly what
-        // markUploaded()/getUnuploadedNotesBetween() are meant to prevent.
-        if (isSelectionMode && !note.uploadedToDrive) {
-            Checkbox(checked = isSelected, onCheckedChange = { onClick() })
-            Spacer(modifier = Modifier.width(8.dp))
-        }
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Already-backed-up notes can't be selected - re-selecting them would just
+            // upload the same content to Drive a second time, which is exactly what
+            // markUploaded()/getUnuploadedNotesBetween() are meant to prevent.
+            if (isSelectionMode && !note.uploadedToDrive) {
+                Checkbox(checked = isSelected, onCheckedChange = { onClick() })
+                Spacer(modifier = Modifier.width(4.dp))
+            } else {
+                // A colored dot doubles the title color's "is this backed up" signal -
+                // both run in the background and take real time, so this is meant to
+                // be readable at a glance without opening the note.
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            color = if (note.uploadedToDrive) AIBlue else TextSecondary,
+                            shape = CircleShape
+                        )
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
 
-        // Background processing (transcription always; backup/summarization only once
-        // Drive is connected) takes real time, so the title color is the at-a-glance
-        // signal for "fully done" rather than making the user open each note to check.
-        val isFullyProcessed = note.uploadedToDrive && note.summary != null
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                note.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = if (isFullyProcessed) AIBlue else Color.Unspecified
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    TimeFormatter.formatRelativeTime(note.createdAt),
+                    note.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (note.uploadedToDrive) AIBlue else Color.Unspecified
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    buildString {
+                        append(TimeFormatter.formatTime(note.createdAt))
+                        if (note.uploadedToDrive) {
+                            append(if (note.summary != null) " · Backed up & summarized" else " · Backed up")
+                        }
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
-                if (isFullyProcessed) {
-                    Text(
-                        " · Backed up & summarized",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                } else if (note.uploadedToDrive) {
-                    Text(
-                        " · Backed up",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
             }
-            HorizontalDivider(modifier = Modifier.padding(top = 12.dp))
         }
     }
 }
