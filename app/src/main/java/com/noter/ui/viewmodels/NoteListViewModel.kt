@@ -11,6 +11,8 @@ import com.noter.data.repository.NoteRepository
 import com.noter.domain.backup.BackupStatusStore
 import com.noter.domain.backup.DriveAuth
 import com.noter.domain.backup.NoteFiler
+import com.noter.domain.summarization.litertlm.GemmaModelDownloader
+import com.noter.domain.summarization.litertlm.HuggingFaceTokenStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +47,12 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
     // which is wrong for something that should only ever be shown once.
     private val _uploadEvents = MutableSharedFlow<String>()
     val uploadEvents: SharedFlow<String> = _uploadEvents
+
+    // Non-null while the on-device model download (triggered by the overflow menu's
+    // Setup item) is in progress, 0f..1f. Null the rest of the time, including on
+    // completion/failure, so the UI can use "is this non-null" as its "show progress" signal.
+    private val _setupDownloadProgress = MutableStateFlow<Float?>(null)
+    val setupDownloadProgress: StateFlow<Float?> = _setupDownloadProgress.asStateFlow()
 
     fun deleteNote(note: Note) {
         viewModelScope.launch {
@@ -142,6 +150,38 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
 
             _uploadEvents.emit(message)
             clearSelection()
+        }
+    }
+
+    /**
+     * Persists [token] and downloads the LiteRT-LM backend's Gemma model - the overflow
+     * menu's "Setup" action. Deliberately separate from the Summarize button: downloading
+     * a ~560MB file should only ever happen when the user explicitly asks for it, not as
+     * a side effect of trying to summarize some arbitrary note.
+     */
+    fun runModelSetup(context: Context, token: String) {
+        if (token.isBlank()) {
+            viewModelScope.launch { _uploadEvents.emit("Enter a Hugging Face token first") }
+            return
+        }
+        if (_setupDownloadProgress.value != null) return
+
+        viewModelScope.launch {
+            HuggingFaceTokenStore.setToken(context, token)
+            _setupDownloadProgress.value = 0f
+            val message = try {
+                withContext(Dispatchers.IO) {
+                    GemmaModelDownloader.download(context, token) { progress ->
+                        _setupDownloadProgress.value = progress
+                    }
+                }
+                "On-device AI is ready"
+            } catch (e: Exception) {
+                Log.e(TAG, "Model setup failed", e)
+                "Model download failed: ${e.message ?: e.javaClass.simpleName}"
+            }
+            _setupDownloadProgress.value = null
+            _uploadEvents.emit(message)
         }
     }
 

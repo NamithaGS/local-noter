@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,6 +67,7 @@ fun NoteListScreen(
     val isSelectionMode = selectedNoteIds.isNotEmpty()
     val isBackingUp by viewModel.isBackingUp.collectAsState()
     val lastBackupTime by viewModel.lastBackupTime.collectAsState()
+    val setupDownloadProgress by viewModel.setupDownloadProgress.collectAsState()
     val recordingState by recordingViewModel.recordingState.collectAsState()
     val elapsedTime by recordingViewModel.elapsedTime.collectAsState()
     val amplitude by recordingViewModel.amplitude.collectAsState()
@@ -130,6 +133,22 @@ fun NoteListScreen(
     }
     val hasDetectedVoice = levelHistory.any { it > SILENCE_THRESHOLD }
 
+    // Overflow menu (⋮, top right) for one-time app-level actions that don't belong on
+    // a per-note or per-recording button - currently just Setup, but named/structured so
+    // more steps can be added here later without another redesign.
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showSetupDialog by remember { mutableStateOf(false) }
+
+    if (showSetupDialog) {
+        ModelSetupDialog(
+            onDismiss = { showSetupDialog = false },
+            onSetUp = { token ->
+                showSetupDialog = false
+                viewModel.runModelSetup(context, token)
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -163,6 +182,24 @@ fun NoteListScreen(
                         TextButton(onClick = { viewModel.uploadSelectedNotes(context) }) {
                             Text("Upload")
                         }
+                    } else {
+                        Box {
+                            IconButton(onClick = { showOverflowMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Setup") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        showSetupDialog = true
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             )
@@ -174,6 +211,18 @@ fun NoteListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            setupDownloadProgress?.let { progress ->
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Setting up on-device AI: ${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
