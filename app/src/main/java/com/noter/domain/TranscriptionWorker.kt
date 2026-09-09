@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.noter.data.db.AppDatabase
 import com.noter.domain.summarization.NoteSummarizer
+import com.noter.domain.summarization.SummarizationResult
 import com.noter.domain.transcription.VoskTranscriber
 import com.noter.util.FileHelper
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +40,8 @@ import java.io.IOException
  * ```
  *
  * Transcription is on-device via Vosk ([VoskTranscriber]) and summarisation is on-device
- * via Gemini Nano ([NoteSummarizer]); nothing leaves the phone.
+ * via [NoteSummarizer] (whichever backend is active - see
+ * [com.noter.domain.summarization.SummarizationConfig]); nothing leaves the phone.
  */
 class TranscriptionWorker(
     context: Context,
@@ -84,12 +86,19 @@ class TranscriptionWorker(
             FileHelper.writeTranscript(transcriptFile, transcript)
 
             val summary = when (val result = summarizer.summarize(transcript)) {
-                is NoteSummarizer.Result.Success -> result.summary
-                is NoteSummarizer.Result.Skipped -> {
+                is SummarizationResult.Success -> result.summary
+                is SummarizationResult.Skipped -> {
                     Log.i(TAG, "Summary skipped for note $noteId: ${result.reason}")
                     null
                 }
-                is NoteSummarizer.Result.Failed -> null
+                is SummarizationResult.Failed -> null
+                // Can't prompt for a Hugging Face token from a background worker - this
+                // note just goes without a summary until the manual Summarize button is
+                // used once setup is done via that path.
+                SummarizationResult.NeedsSetup -> {
+                    Log.i(TAG, "Summary skipped for note $noteId: on-device model not set up yet")
+                    null
+                }
             }
 
             updateNote(

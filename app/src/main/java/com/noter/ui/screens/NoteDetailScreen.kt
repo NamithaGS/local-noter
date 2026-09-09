@@ -35,6 +35,8 @@ fun NoteDetailScreen(
     val transcript by viewModel.transcript.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isSummarizing by viewModel.isSummarizing.collectAsState()
+    val needsModelSetup by viewModel.needsModelSetup.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -46,6 +48,13 @@ fun NoteDetailScreen(
         viewModel.summaryEvents.collect { message ->
             snackbarHostState.showSnackbar(message)
         }
+    }
+
+    if (needsModelSetup) {
+        ModelSetupDialog(
+            onDismiss = { viewModel.dismissModelSetup() },
+            onDownload = { token -> viewModel.downloadModelAndSummarize(context, token) }
+        )
     }
 
     Scaffold(
@@ -100,10 +109,11 @@ fun NoteDetailScreen(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Gemini Nano summarization is best-effort (see NoteSummarizer) - a note
-                // can be fully valid with summary == null, e.g. on a non-AICore device
-                // or a transcript too short to bother summarizing. The button below lets
-                // the user retry on-demand instead of only ever getting one automatically.
+                // On-device summarization is best-effort (see NoteSummarizer) - a note
+                // can be fully valid with summary == null, e.g. before the active
+                // backend is set up, or for a transcript too short to bother
+                // summarizing. The button below lets the user retry on-demand instead of
+                // only ever getting one automatically.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "SUMMARY",
@@ -111,13 +121,26 @@ fun NoteDetailScreen(
                         color = TextSecondary,
                         modifier = Modifier.weight(1f)
                     )
-                    if (isSummarizing) {
+                    if (isSummarizing || downloadProgress != null) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
                     } else {
                         TextButton(onClick = { viewModel.summarize(context) }) {
                             Text(if (note?.summary != null) "Regenerate" else "Summarize")
                         }
                     }
+                }
+                downloadProgress?.let { progress ->
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Downloading on-device model: ${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -150,4 +173,48 @@ fun NoteDetailScreen(
             }
         }
     }
+}
+
+/**
+ * One-time setup prompt shown when the active summarization backend needs a Hugging Face
+ * access token to download its model (currently: LiteRT-LM's Gemma model). The token
+ * itself never touches this app's UI state beyond this composable - it's handed straight
+ * to [NoteDetailViewModel.downloadModelAndSummarize], which persists it via
+ * [com.noter.domain.summarization.litertlm.HuggingFaceTokenStore] and starts the download.
+ */
+@Composable
+private fun ModelSetupDialog(onDismiss: () -> Unit, onDownload: (token: String) -> Unit) {
+    var token by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set up on-device AI") },
+        text = {
+            Column {
+                Text(
+                    "Summarizing needs a one-time ~560MB model download from Hugging " +
+                        "Face. Accept the Gemma license at huggingface.co/litert-community/" +
+                        "Gemma3-1B-IT, then paste an access token from your account here."
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("Hugging Face access token") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onDownload(token) }) {
+                Text("Download & Summarize")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

@@ -108,6 +108,12 @@ dependencies {
     // Gemini Nano/AICore. Same device support caveats as summarization above.
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
 
+    // Alternative on-device summarization backend: runs a small Gemma model directly
+    // instead of going through ML Kit GenAI/AICore - see SummarizationConfig for why,
+    // and GemmaModelDownloader for the model file this needs (downloaded at runtime, not
+    // bundled - it's a ~560MB gated Hugging Face download).
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.0")
+
     // Google Drive/Docs backup: Sign-In for OAuth, API clients for the Drive v3 and
     // Docs v1 REST calls.
     implementation("com.google.android.gms:play-services-auth:21.2.0")
