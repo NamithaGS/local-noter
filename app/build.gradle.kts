@@ -24,6 +24,23 @@ android {
         }
     }
 
+    // Without this, AGP falls back to an implicit debug keystore at ~/.android/debug.keystore,
+    // auto-generating one with a random key the first time it's needed on any given machine.
+    // That's fine for local development, but on GitHub Actions' ephemeral runners it meant a
+    // brand-new signing key (and SHA-1) on every single CI build - which broke Google Sign-In
+    // each time, since the Android OAuth client in Google Cloud Console is registered against
+    // one fixed SHA-1. Pinning an explicit, committed debug keystore (password "android",
+    // alias "androiddebugkey" - the same defaults AGP's implicit one uses) keeps the debug
+    // signing key, and therefore the SHA-1, identical across every machine and every CI run.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
