@@ -60,11 +60,19 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
      * [WorkClassifier]) and appends Work-classified ones to their topic doc under
      * `LocalNoter/Work/<topic>`. Notes classified as not-work are left out of Work
      * entirely, per "there has to be a Work folder only" - nothing else gets filed there.
+     *
+     * A Work-classified note that already has an AI summary at this point also gets that
+     * summary appended to `LocalNoter/SummarizedNotes/<topic>` (same topic as its Work
+     * doc). A note with no summary yet - the common case while Gemini Nano isn't
+     * producing one - is simply left out of SummarizedNotes; there's no separate
+     * retry/backfill pass for this, matching how Work classification itself is only
+     * ever attempted once per note.
      */
     suspend fun classifyNotes(notes: List<Note>) {
         if (notes.isEmpty()) return
 
         var workFolderId: String? = null
+        var summarizedNotesFolderId: String? = null
         notes.forEach { note ->
             val transcript = readTranscript(note)
             when (val result = classifier.classify(transcript, note.manualTag)) {
@@ -73,6 +81,14 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
                         ?: driveService.findOrCreateFolder(WORK_FOLDER, rootFolderId).also { workFolderId = it }
                     val topicDocId = driveService.findOrCreateDoc(result.topic, folderId)
                     driveService.appendToDoc(topicDocId, NoteSectionFormatter.format(note))
+
+                    note.summary?.let { summary ->
+                        val summarizedFolderId = summarizedNotesFolderId
+                            ?: driveService.findOrCreateFolder(SUMMARIZED_NOTES_FOLDER, rootFolderId)
+                                .also { summarizedNotesFolderId = it }
+                        val summaryDocId = driveService.findOrCreateDoc(result.topic, summarizedFolderId)
+                        driveService.appendToDoc(summaryDocId, NoteSectionFormatter.formatSummary(note, summary))
+                    }
                 }
                 WorkClassification.NotWork -> Unit
             }
@@ -94,5 +110,6 @@ class NoteFiler(context: Context, account: GoogleSignInAccount) {
         const val ROOT_FOLDER = "LocalNoter"
         const val ALL_NOTES_FOLDER = "AllNotes"
         const val WORK_FOLDER = "Work"
+        const val SUMMARIZED_NOTES_FOLDER = "SummarizedNotes"
     }
 }

@@ -34,6 +34,22 @@ object NoteSectionFormatter {
         appendLine("---")
     }
 
+    /**
+     * Formats one note's AI summary as a dated section for a `SummarizedNotes/<topic>`
+     * doc - just the timestamp, title and summary, deliberately leaving out the full
+     * transcript that [format] includes, since the point of that doc is a condensed
+     * per-topic view.
+     */
+    fun formatSummary(note: Note, summary: String): String = buildString {
+        appendLine()
+        appendLine(TIMESTAMP_FORMAT.format(Date(note.createdAt)))
+        appendLine(note.title)
+        appendLine()
+        appendLine(summary)
+        appendLine()
+        appendLine("---")
+    }
+
     private fun readTranscript(note: Note): String {
         if (note.transcriptPath.isBlank()) return "(no transcript)"
         val file = File(note.transcriptPath)
