@@ -3,6 +3,7 @@ package com.noter.ui.viewmodels
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.mlkit.genai.common.GenAiException
 import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
 import com.noter.domain.summarization.NoteSummarizer
@@ -92,8 +93,17 @@ class NoteDetailViewModel(private val repository: NoteRepository) : ViewModel() 
                 }
                 is NoteSummarizer.Result.Skipped ->
                     _summaryEvents.emit("Couldn't summarize: ${result.reason}")
-                is NoteSummarizer.Result.Failed ->
-                    _summaryEvents.emit("Summarization failed: ${result.cause.message ?: "unknown error"}")
+                is NoteSummarizer.Result.Failed -> {
+                    val cause = result.cause
+                    val description = cause.message ?: cause.javaClass.simpleName
+                    // The error code (e.g. 15 = RESPONSE_GENERATION_ERROR) is Gemini
+                    // Nano's own generic bucket for "couldn't produce a response" - it
+                    // covers more than just safety-classifier rejections, so surfacing
+                    // the number lets a recurring failure be told apart from a one-off
+                    // without needing logcat access.
+                    val suffix = (cause as? GenAiException)?.errorCode?.let { " (code $it)" } ?: ""
+                    _summaryEvents.emit("Summarization failed: $description$suffix")
+                }
             }
             _isSummarizing.value = false
         }

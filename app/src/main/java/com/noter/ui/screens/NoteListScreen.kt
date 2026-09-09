@@ -155,7 +155,7 @@ fun NoteListScreen(
                     .padding(16.dp)
                     // Without this, each card sizes to its own content and they end up
                     // different heights whenever one label wraps to more lines than the
-                    // other (e.g. "Backup & Summarize" vs "Start Recording").
+                    // other (e.g. "Summarize & Backup" vs "Start Recording").
                     .height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -293,7 +293,13 @@ private fun RecordButton(
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            // Top, not CenterVertically: the two buttons' text blocks wrap to different
+            // numbers of lines ("Not connected - tap to set up" is much longer than "Tap
+            // to begin"), so centering each icon within its own row made the two circles
+            // land at different heights even though both cards match in total height.
+            // Top-aligning anchors both icons to the first line of text, which is the
+            // same position on both cards regardless of how the subtitle wraps.
+            verticalAlignment = Alignment.Top
         ) {
             Surface(
                 modifier = Modifier.size(56.dp),
@@ -351,7 +357,8 @@ private fun BackupButton(
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            // Top-aligned to match RecordButton - see the comment there.
+            verticalAlignment = Alignment.Top
         ) {
             Surface(
                 modifier = Modifier.size(56.dp),
@@ -376,7 +383,7 @@ private fun BackupButton(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column {
-                Text("Backup & Summarize", style = MaterialTheme.typography.titleMedium)
+                Text("Summarize & Backup", style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
                         isBackingUp -> "Backing up..."
