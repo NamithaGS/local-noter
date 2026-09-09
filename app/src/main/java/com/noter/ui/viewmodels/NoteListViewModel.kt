@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
 import com.noter.domain.backup.BackupStatusStore
@@ -166,11 +167,23 @@ class NoteListViewModel(private val repository: NoteRepository) : ViewModel() {
      * pulled from a bug report; the class name is used as a fallback label instead of a
      * generic string so at least the *kind* of failure (timeout, auth, I/O, ...) is visible.
      *
+     * A [GoogleJsonResponseException] (any non-2xx response from the Drive/Docs REST
+     * APIs - e.g. a 403 because the Docs API isn't enabled on the project, or a 404 for
+     * a folder the app no longer has access to) is special-cased: its raw `.message` is
+     * the entire HTTP response dumped as text, which is unreadable in a one-line
+     * snackbar. `.details.message` is Google's own short human-readable explanation -
+     * often naming exactly what's wrong and, for a disabled-API error, a direct link to
+     * enable it - so that's preferred when present, alongside the HTTP status code.
+     *
      * @param e the exception caught around a backup/upload attempt
      * @return a short human-readable description of [e], suitable for a snackbar
      */
     private fun describeError(e: Exception): String {
         Log.e(TAG, "Drive backup/upload failed", e)
+        if (e is GoogleJsonResponseException) {
+            val detail = e.details?.message
+            return if (detail != null) "$detail (HTTP ${e.statusCode})" else "HTTP ${e.statusCode}"
+        }
         return e.message ?: e.javaClass.simpleName
     }
 
