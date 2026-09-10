@@ -133,17 +133,18 @@ fun NoteListScreen(
     }
     val hasDetectedVoice = levelHistory.any { it > SILENCE_THRESHOLD }
 
-    // Overflow menu (⋮, top right) for one-time app-level actions that don't belong on
-    // a per-note or per-recording button - currently just Setup, but named/structured so
-    // more steps can be added here later without another redesign.
+    // Overflow menu (⋮, top right) for one-time app-level setup actions - Google Drive
+    // and the on-device AI model each need their own one-time connection/download before
+    // the main buttons below can do anything, so both live here rather than one of them
+    // being a surprising side effect of tapping a button meant for everyday use.
     var showOverflowMenu by remember { mutableStateOf(false) }
-    var showSetupDialog by remember { mutableStateOf(false) }
+    var showHuggingFaceSetupDialog by remember { mutableStateOf(false) }
 
-    if (showSetupDialog) {
+    if (showHuggingFaceSetupDialog) {
         ModelSetupDialog(
-            onDismiss = { showSetupDialog = false },
+            onDismiss = { showHuggingFaceSetupDialog = false },
             onSetUp = { token ->
-                showSetupDialog = false
+                showHuggingFaceSetupDialog = false
                 viewModel.runModelSetup(context, token)
             }
         )
@@ -192,10 +193,17 @@ fun NoteListScreen(
                                 onDismissRequest = { showOverflowMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Setup") },
+                                    text = { Text("Setup Google Drive") },
                                     onClick = {
                                         showOverflowMenu = false
-                                        showSetupDialog = true
+                                        driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Setup Hugging Face") },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        showHuggingFaceSetupDialog = true
                                     }
                                 )
                             }
@@ -254,7 +262,9 @@ fun NoteListScreen(
                         if (isDriveConnected) {
                             viewModel.backupNow(context)
                         } else {
-                            driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("Connect Google Drive first - use Setup Google Drive in the ⋮ menu")
+                            }
                         }
                     },
                     onLongClick = {
@@ -367,12 +377,12 @@ private fun RecordButton(
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
-            // Top, not CenterVertically: the two buttons' text blocks wrap to different
-            // numbers of lines ("Not connected - tap to set up" is much longer than "Tap
-            // to begin"), so centering each icon within its own row made the two circles
-            // land at different heights even though both cards match in total height.
-            // Top-aligning anchors both icons to the first line of text, which is the
-            // same position on both cards regardless of how the subtitle wraps.
+            // Top, not CenterVertically: the two buttons' text blocks can wrap to
+            // different numbers of lines depending on state, so centering each icon
+            // within its own row made the two circles land at different heights even
+            // though both cards match in total height. Top-aligning anchors both icons
+            // to the first line of text, which is the same position on both cards
+            // regardless of how the subtitle wraps.
             verticalAlignment = Alignment.Top
         ) {
             Surface(
@@ -409,8 +419,10 @@ private fun RecordButton(
 }
 
 /**
- * Sits next to [RecordButton]. Tap either connects Google Drive (if not yet connected)
- * or backs up every pending note right now; long-press disconnects. The subtitle is the
+ * Sits next to [RecordButton]. Tap backs up every pending note right now - Google Drive
+ * connection itself happens through the note list's ⋮ menu (Setup Google Drive), not
+ * this button, so tapping it before that's done just points at the menu instead of
+ * silently kicking off a sign-in flow. Long-press disconnects. The subtitle is the
  * at-a-glance freshness signal, since both backup and summarization run in the
  * background and take real time to finish.
  */
@@ -461,7 +473,7 @@ private fun BackupButton(
                 Text(
                     when {
                         isBackingUp -> "Backing up..."
-                        !isConnected -> "Not connected - tap to set up"
+                        !isConnected -> "Not connected"
                         lastBackupTime != null ->
                             "Backed up ${TimeFormatter.formatRelativeTime(lastBackupTime).replaceFirstChar { it.lowercase() }}"
                         else -> "Tap to back up now"
