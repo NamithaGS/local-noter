@@ -10,13 +10,13 @@ import java.nio.ByteOrder
 /**
  * Decodes a compressed audio file into 16-bit signed PCM, mono, at [TARGET_SAMPLE_RATE].
  *
- * Vosk only accepts raw PCM at a known sample rate, but [com.noter.domain.RecordingManager]
- * writes AAC in an MP4 container, so recordings have to be decoded (and if necessary
- * downmixed and resampled) before they can be transcribed.
+ * The speech recognizer only accepts raw PCM at a known sample rate, but
+ * [com.noter.domain.RecordingManager] writes AAC in an MP4 container, so recordings have
+ * to be decoded (and if necessary downmixed and resampled) before they can be transcribed.
  */
 object PcmAudioDecoder {
 
-    /** Sample rate the Vosk models in this project are trained for. */
+    /** Sample rate the sherpa-onnx model in this project is trained for. */
     const val TARGET_SAMPLE_RATE = 16_000
 
     private const val DEQUEUE_TIMEOUT_US = 10_000L

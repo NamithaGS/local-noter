@@ -39,7 +39,8 @@ class RecordingManager(private val context: Context) {
             }.apply {
                 // MIC is the "raw" source with little to no automatic gain control on
                 // many devices, so normal speaking volume came through too quiet for
-                // Vosk to pick up ("need to shout for it to detect"). VOICE_COMMUNICATION
+                // the speech recognizer to pick up ("need to shout for it to detect").
+                // VOICE_COMMUNICATION
                 // was tried next but made this worse - it's tuned for phone calls, so
                 // its noise suppression/echo cancellation is built around canceling a
                 // known far-end signal, and with no call in progress it apparently just
@@ -50,9 +51,10 @@ class RecordingManager(private val context: Context) {
                 setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                // Recorded to match what the Vosk models expect, so transcription can
-                // decode straight to PCM without downmixing or resampling. Speech
-                // recognition gains nothing from a higher rate or a second channel.
+                // Recorded to match what the speech recognition model expects, so
+                // transcription can decode straight to PCM without downmixing or
+                // resampling. Speech recognition gains nothing from a higher rate or a
+                // second channel.
                 setAudioChannels(1)
                 setAudioSamplingRate(PcmAudioDecoder.TARGET_SAMPLE_RATE)
                 setAudioEncodingBitRate(AUDIO_BIT_RATE)

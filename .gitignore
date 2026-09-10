@@ -9,8 +9,8 @@ build/
 *.dex
 local.properties
 
-# Speech model: ~41 MB of binary data, fetched by scripts/fetch-vosk-model.sh
-app/src/main/assets/vosk-model-*/
+# Speech model: ~125 MB of binary data, fetched by scripts/fetch-sherpa-model.sh
+app/src/main/assets/sherpa-onnx-en/
 
 # IDE
 .idea/

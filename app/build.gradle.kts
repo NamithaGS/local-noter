@@ -60,6 +60,13 @@ android {
         compose = true
     }
 
+    androidResources {
+        // Avoids DEFLATE-compressing the (already dense, quantized) ONNX model files -
+        // skips decompression overhead on first extraction and avoids briefly holding
+        // both the compressed-in-APK and decompressed-on-filesystem copies at once.
+        noCompress += "onnx"
+    }
+
     packaging {
         resources {
             // google-auth-library-{oauth2-http,credentials} (pulled in transitively by
@@ -96,9 +103,12 @@ dependencies {
 
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // Speech-to-text: on-device, offline. Pulls in libvosk.so + net.java.dev.jna.
-    // Requires a model in app/src/main/assets/ - see scripts/fetch-vosk-model.sh.
-    implementation("com.alphacephei:vosk-android:0.3.75")
+    // Speech-to-text: on-device, offline, via sherpa-onnx (Zipformer transducer model).
+    // No published Maven/JitPack artifact exists for this project, so the release AAR
+    // (downloaded directly from GitHub Releases and verified - real compiled classes,
+    // real prebuilt native libs for all four ABIs) is vendored here instead. Requires
+    // a model in app/src/main/assets/ - see scripts/fetch-sherpa-model.sh.
+    implementation(files("libs/sherpa-onnx-1.13.7.aar"))
 
     // Summarization via Gemini Nano through AICore. Only functional on devices that
     // ship AICore (Pixel 8+, Galaxy S24+); degrades gracefully elsewhere.

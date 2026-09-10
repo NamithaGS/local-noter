@@ -29,7 +29,7 @@ A lightweight, privacy-focused Android app that records voice notes and turns th
 | Feature | Description |
 |---------|-------------|
 | 🎙️ **Voice Recording** | One-tap recording, M4A audio |
-| 📝 **Speech-to-Text** | Automatic transcription via Vosk (on-device, offline) |
+| 📝 **Speech-to-Text** | Automatic transcription via sherpa-onnx (on-device, offline) |
 | 🤖 **AI Summarization** | Three-bullet summaries, fully on-device - no cloud LLM call |
 | 🏷️ **Topic Tags** | Tag a note's topic yourself to route its summary into a per-topic doc |
 | ☁️ **Optional Drive Backup** | Back up notes as real Google Docs to your own Drive - opt-in, your account, your data |
@@ -39,7 +39,7 @@ A lightweight, privacy-focused Android app that records voice notes and turns th
 
 ## 🧠 How your data is handled
 
-- **Transcription** (Vosk) and **summarization** run entirely on-device. Nothing about what you say or record is sent to any AI provider.
+- **Transcription** (sherpa-onnx) and **summarization** run entirely on-device. Nothing about what you say or record is sent to any AI provider.
 - **Google Drive backup is optional and off by default.** If you turn it on (⋮ menu → Setup Google Drive), the app writes to a `LocalNoter` folder it creates in *your* Drive, using access scoped to only the files it creates itself - it can't see or touch anything else in your Drive.
 - **On-device summarization needs a one-time model download** (⋮ menu → Setup Hugging Face). You provide your own free Hugging Face account and access token to fetch the model weights once; after that, summarization runs fully offline.
 

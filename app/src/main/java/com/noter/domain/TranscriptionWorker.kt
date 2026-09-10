@@ -7,7 +7,7 @@ import androidx.work.WorkerParameters
 import com.noter.data.db.AppDatabase
 import com.noter.domain.summarization.NoteSummarizer
 import com.noter.domain.summarization.SummarizationResult
-import com.noter.domain.transcription.VoskTranscriber
+import com.noter.domain.transcription.SherpaOnnxTranscriber
 import com.noter.util.FileHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,8 +39,8 @@ import java.io.IOException
  * WorkManager.getInstance(context).enqueue(workRequest)
  * ```
  *
- * Transcription is on-device via Vosk ([VoskTranscriber]) and summarisation is on-device
- * via [NoteSummarizer] (whichever backend is active - see
+ * Transcription is on-device via sherpa-onnx ([SherpaOnnxTranscriber]) and summarisation
+ * is on-device via [NoteSummarizer] (whichever backend is active - see
  * [com.noter.domain.summarization.SummarizationConfig]); nothing leaves the phone.
  */
 class TranscriptionWorker(
@@ -58,7 +58,7 @@ class TranscriptionWorker(
         private const val NO_SPEECH_TITLE = "No speech detected"
     }
 
-    private val transcriber by lazy { VoskTranscriber(applicationContext) }
+    private val transcriber by lazy { SherpaOnnxTranscriber(applicationContext) }
     private val summarizer by lazy { NoteSummarizer(applicationContext) }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -109,9 +109,9 @@ class TranscriptionWorker(
             )
 
             Result.success()
-        } catch (e: VoskTranscriber.ModelNotInstalledException) {
+        } catch (e: SherpaOnnxTranscriber.ModelNotInstalledException) {
             // A missing model is a build/setup problem; retrying cannot fix it.
-            Log.e(TAG, "Vosk model not installed", e)
+            Log.e(TAG, "sherpa-onnx model not installed", e)
             Result.failure()
         } catch (e: IOException) {
             Log.w(TAG, "Transcription of note $noteId failed (attempt $runAttemptCount)", e)

@@ -23,7 +23,10 @@ the note's user-set tag — see `NoteFiler.archiveNotes`/`summarizeNotes`).
 - Room 2.8.4 (persistence, schema version 4, `fallbackToDestructiveMigration()` — no real
   `Migration`s written yet), WorkManager (background transcription + daily backup),
   Navigation Compose
-- Vosk `0.3.75` (`com.alphacephei:vosk-android`) — offline speech-to-text
+- sherpa-onnx (Zipformer transducer model) — offline speech-to-text. No published
+  Maven/JitPack artifact exists for its Android bindings, so the release `.aar` is
+  vendored at `app/libs/sherpa-onnx-1.13.7.aar` (verified against the real repo source
+  and decompiled classes before committing, not just docs). Replaced Vosk this session.
 - Summarization is **pluggable** — see `domain/summarization/SummarizationConfig.ACTIVE_BACKEND`:
   - `GEMINI_NANO`: ML Kit GenAI Summarization `1.0.0-beta1` via AICore (Pixel 8+/Galaxy
     S24+ only). Currently broken — rejects every summarization attempt with a
@@ -41,7 +44,7 @@ the note's user-set tag — see `NoteFiler.archiveNotes`/`summarizeNotes`).
 ## Build, Test, Run
 
 ```bash
-scripts/fetch-vosk-model.sh      # REQUIRED once per clone; downloads ~41 MB model
+scripts/fetch-sherpa-model.sh    # REQUIRED once per clone; downloads ~125 MB model
 ./gradlew assembleDebug
 ./gradlew testDebugUnitTest      # JVM unit tests (Robolectric where needed) - 63 tests, all passing
 ./gradlew connectedAndroidTest   # instrumented tests, needs a device/emulator
@@ -65,9 +68,9 @@ MVVM over a repository. Recording and transcription are decoupled through WorkMa
 1. `RecordingViewModel.stopRecording()` inserts a `Note` with a "Transcribing..."
    placeholder title and enqueues `TranscriptionWorker` (pass keys via
    `TranscriptionWorker.KEY_*`, never string literals).
-2. `TranscriptionWorker` → `VoskTranscriber` → `PcmAudioDecoder` → writes the transcript
-   file → `NoteSummarizer` (facade over whichever `SummarizationEngine` is active) →
-   updates the Room row.
+2. `TranscriptionWorker` → `SherpaOnnxTranscriber` → `PcmAudioDecoder` → writes the
+   transcript file → `NoteSummarizer` (facade over whichever `SummarizationEngine` is
+   active) → updates the Room row.
 
 Backup is a separate two-pass daily job (`DriveBackupWorker`, self-rescheduling via
 `DriveBackupScheduler`), or triggered manually from the note list:
@@ -80,15 +83,23 @@ Backup is a separate two-pass daily job (`DriveBackupWorker`, self-rescheduling 
 
 Key constraints when touching this path:
 
-- **Vosk only accepts 16 kHz mono 16-bit PCM.** `RecordingManager` records AAC at exactly
-  that rate/channel count so `PcmAudioDecoder` can decode 1:1, but the decoder still
+- **sherpa-onnx only accepts 16 kHz mono float32 PCM.** `RecordingManager` records AAC at
+  16 kHz mono exactly so `PcmAudioDecoder` can decode 1:1, but the decoder still
   downmixes and resamples so older recordings keep working. If you change the recording
   format, check both sides. `AudioSource` is `VOICE_RECOGNITION` (not `MIC` — too quiet
   without AGC on many devices; not `VOICE_COMMUNICATION` — its call-oriented
   noise-suppression/echo-cancellation made things worse without a real call in progress).
-- **The Vosk model lives in `assets/`, not git.** `StorageService.sync` requires a `uuid`
-  file in the model directory and re-extracts when it changes; `fetch-vosk-model.sh`
-  writes it.
+- **sherpa-onnx's *offline* recognizer wants the whole utterance in one `acceptWaveform()`
+  call**, unlike Vosk's incremental streaming API — `SherpaOnnxTranscriber` accumulates
+  `PcmAudioDecoder`'s chunked output into one buffer before feeding it through, rather
+  than streaming chunk-by-chunk. It also has no built-in silence/VAD detection, so it can
+  occasionally produce a short hallucinated phrase on pure silence or noise (observed on
+  the emulator's synthetic mic) — a real device with real speech shouldn't hit this, but
+  if it becomes a nuisance the fix is adding sherpa-onnx's own VAD pass before
+  recognition, not swapping models again.
+- **The sherpa-onnx model lives in `assets/`, not git.** `SherpaOnnxTranscriber` copies it
+  to app-private filesystem storage on first use (ONNX Runtime needs real file paths, not
+  asset streams) — `scripts/fetch-sherpa-model.sh` downloads it into assets.
 - **Summarisation is best-effort regardless of backend.** `NoteSummarizer.summarize()`
   returns a `SummarizationResult` (`Success` / `Skipped` / `Failed` / `NeedsSetup`) and
   never throws; a note must remain valid with `summary == null`. `NeedsSetup` (LiteRT-LM

@@ -22,8 +22,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Fetch vosk model
-        run: ./scripts/fetch-vosk-model.sh
+      - name: Fetch speech recognition model
+        run: ./scripts/fetch-sherpa-model.sh
 
       # assembleDebug (not assembleRelease): the release build type has no signingConfig,
       # so it can't produce an installable APK in CI without a keystore secret.

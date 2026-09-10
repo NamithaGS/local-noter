@@ -14,7 +14,7 @@ cd local-noter
 Open in Android Studio (**File → Open**), let Gradle sync, then:
 
 ```bash
-scripts/fetch-vosk-model.sh    # ~41MB, not committed to git - required before transcription works
+scripts/fetch-sherpa-model.sh    # ~125MB, not committed to git - required before transcription works
 ```
 
 Connect a device (USB debugging on) or start an emulator, then **Run** in Android Studio, or:
@@ -36,7 +36,7 @@ Connect a device (USB debugging on) or start an emulator, then **Run** in Androi
 - compileSdk/targetSdk 35, minSdk 34, JDK 17
 
 **On-device AI (no external LLM calls anywhere in this stack):**
-- [Vosk](https://alphacephei.com/vosk/) `0.3.75` - offline speech-to-text
+- Speech-to-text via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) running a Zipformer transducer model (`icefall-asr-multidataset-pruned_transducer_stateless7-2023-05-04`, int8 encoder + fp32 decoder/joiner, ~125MB). Replaced Vosk this session - noticeably more accurate at a comparable model size. No published Maven/JitPack artifact exists for sherpa-onnx's Android bindings, so the release `.aar` is vendored directly at `app/libs/sherpa-onnx-1.13.7.aar` (downloaded from GitHub Releases and verified - real compiled classes, real prebuilt native libs for all four ABIs, decompiled and checked before committing). The model files are individually downloadable from Hugging Face, ungated, Apache-2.0.
 - Summarization is **pluggable** between two backends (`SummarizationConfig.ACTIVE_BACKEND` is the single switch point):
   - **`GEMINI_NANO`** - ML Kit GenAI Summarization (`genai-summarization:1.0.0-beta1`) via AICore. Requires Pixel 8+/Galaxy S24+-class hardware. As of writing this backend reliably rejects every summarization attempt with a "policy check failure" even on supported hardware - looks like a beta-API/AICore version-skew issue, not something fixable from the app. Not currently active.
   - **`LITERT_LM`** (currently active) - runs Gemma3-1B-IT directly via Google's [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) API (`com.google.ai.edge.litertlm:litertlm-android:0.17.0`), bypassing AICore's safety-classifier layer entirely. The model (~560MB, `.litertlm` format) is downloaded at runtime from Hugging Face's gated `litert-community/Gemma3-1B-IT` repo - the end user supplies their own HF access token via the in-app "Setup Hugging Face" flow, since accepting Gemma's license isn't something the app can do on anyone's behalf.
@@ -65,7 +65,9 @@ local-noter/
 │   ├── domain/
 │   │   ├── RecordingManager.kt
 │   │   ├── TranscriptionWorker.kt
-│   │   ├── transcription/         # Vosk + PCM audio decoding
+│   │   ├── transcription/
+│   │   │   ├── SherpaOnnxTranscriber.kt   # unpacks model from assets, runs recognition
+│   │   │   └── PcmAudioDecoder.kt         # AAC/M4A -> 16kHz mono PCM, backend-agnostic
 │   │   ├── summarization/         # Pluggable summarization (see Tech Stack above)
 │   │   │   ├── NoteSummarizer.kt              # facade every caller uses
 │   │   │   ├── SummarizationConfig.kt         # the GEMINI_NANO / LITERT_LM switch
@@ -131,7 +133,7 @@ git tag v5
 git push origin v5
 ```
 
-This fetches the Vosk model, runs `./gradlew assembleDebug`, and attaches the resulting `app-debug.apk` to a GitHub Release for that tag via `softprops/action-gh-release`. Can also be triggered manually from the **Actions** tab (`workflow_dispatch`).
+This fetches the sherpa-onnx model, runs `./gradlew assembleDebug`, and attaches the resulting `app-debug.apk` to a GitHub Release for that tag via `softprops/action-gh-release`. Can also be triggered manually from the **Actions** tab (`workflow_dispatch`). The debug APK is large (~300MB) - between sherpa-onnx's bundled onnxruntime native libs, LiteRT-LM's native libs, and the sherpa-onnx model itself, all packaged for on-device AI with zero external calls.
 
 There's no `assembleRelease` signing config - only debug builds are produced by CI.
 
@@ -160,7 +162,7 @@ Notes for anyone extending the test suite:
 
 ### First-time setup
 ```bash
-scripts/fetch-vosk-model.sh   # required - transcription throws ModelNotInstalledException without it
+scripts/fetch-sherpa-model.sh   # required - transcription throws ModelNotInstalledException without it
 ```
 
 ### Building
@@ -180,7 +182,10 @@ scripts/fetch-vosk-model.sh   # required - transcription throws ModelNotInstalle
 → Your default `java` is newer than Robolectric's bundled ASM supports. Run Gradle with `JAVA_HOME` pointed at a JDK 17 install explicitly, e.g. `JAVA_HOME=/path/to/jdk17 ./gradlew test`.
 
 **Transcripts come back empty / `ModelNotInstalledException` in logcat**
-→ Run `scripts/fetch-vosk-model.sh` and rebuild - the model isn't in version control.
+→ Run `scripts/fetch-sherpa-model.sh` and rebuild - the model isn't in version control.
+
+**Transcription produces short, unrelated-looking text on silence/background noise**
+→ This is a known characteristic of transducer-based ASR models without a voice-activity-detection (VAD) front end - unlike Vosk's classic decoder, sherpa-onnx's offline Zipformer model has no explicit "silence" class and can occasionally hallucinate a short phrase on pure silence or noise (observed on the emulator's synthetic mic input during testing). Real speech should transcribe normally; if this turns out to be a real nuisance on-device, the fix is adding a VAD pass (sherpa-onnx ships one) before recognition, not swapping models again.
 
 **Google Sign-In fails with "could not connect" after a fresh CI build**
 → Confirm `app/debug.keystore` is actually being used (`signingConfigs.debug.storeFile` in `app/build.gradle.kts`) and that its SHA-1 matches what's registered in Google Cloud Console. Verify with:
