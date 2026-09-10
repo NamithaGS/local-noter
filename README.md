@@ -1,6 +1,8 @@
-# Local Noter - AI-Powered Voice Notes
+# Local Noter
 
-A lightweight, privacy-focused Android app that records voice notes and converts them to text using on-device AI. No cloud required - your notes never leave your phone.
+A lightweight, privacy-focused Android app that records voice notes and turns them into text and summaries using on-device AI.
+
+**The premise: everything needed to do this runs on your phone.** Transcription and summarization both happen locally - there are no calls to an external LLM provider (no OpenAI, no Anthropic, no cloud inference of any kind) for either step. The only network activity in the app is two things you explicitly turn on yourself: backing your notes up to your own Google Drive, and a one-time download of the on-device summarization model's weights.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android%2014%2B-green.svg" alt="Platform">
@@ -10,19 +12,15 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 ---
 
-## 📥 Installation (For Users)
-
-**Want to just use the app?**
+## 📥 Installation
 
 1. Go to the [Releases page](https://github.com/NamithaGS/local-noter/releases)
-2. Download the latest `noter-debug.apk`
+2. Download the latest `app-debug.apk`
 3. Install on your Android phone (Android 14+ required)
-4. Done! No development tools needed.
 
 **Requirements:**
 - Android 14 or higher
-- Pixel 8+ (recommended for AI summarization) or compatible device
-- ~100MB storage space
+- ~250MB free storage space if you set up on-device summarization (the model download is ~560MB one-time; see below)
 
 ---
 
@@ -30,267 +28,69 @@ A lightweight, privacy-focused Android app that records voice notes and converts
 
 | Feature | Description |
 |---------|-------------|
-| 🎙️ **Voice Recording** | One-tap recording with M4A audio compression |
-| 📝 **Speech-to-Text** | Automatic transcription using Vosk (on-device, offline) |
-| 🤖 **AI Summarization** | Concise summaries via Gemini Nano (requires compatible device) |
-| 💾 **Local Storage** | All data stored in your Documents folder - easy to backup |
-| 📋 **Export** | Copy to clipboard or download as .txt files |
-| 🔊 **Playback** | Replay your original recordings anytime |
-| 🔒 **Privacy First** | 100% on-device processing, no cloud, no tracking |
+| 🎙️ **Voice Recording** | One-tap recording, M4A audio |
+| 📝 **Speech-to-Text** | Automatic transcription via Vosk (on-device, offline) |
+| 🤖 **AI Summarization** | Three-bullet summaries, fully on-device - no cloud LLM call |
+| 🏷️ **Topic Tags** | Tag a note's topic yourself to route its summary into a per-topic doc |
+| ☁️ **Optional Drive Backup** | Back up notes as real Google Docs to your own Drive - opt-in, your account, your data |
+| 🔒 **Privacy First** | Transcription and summarization never leave your phone |
 
 ---
 
-## 🏗️ For Developers
+## 🧠 How your data is handled
 
-### Quick Start
-
-**1. Clone the repository:**
-```bash
-git clone https://github.com/NamithaGS/local-noter.git
-cd local-noter
-```
-
-**2. Open in Android Studio:**
-- Launch Android Studio
-- **File → Open** → Select the `local-noter` folder
-- Wait for Gradle sync to complete
-
-**3. Run on your phone:**
-- Enable USB Debugging on your Android device
-- Connect via USB
-- Click **Run** (▶️) in Android Studio
-- Select your device
-
-Done! The app installs and launches on your phone.
-
----
-
-## 🔧 Tech Stack
-
-**Architecture:** Clean Architecture + MVVM
-
-**Languages & Frameworks:**
-- Kotlin
-- Jetpack Compose (Material 3)
-- Kotlin Coroutines & Flow
-
-**Android Jetpack:**
-- Room Database
-- Navigation Compose
-- WorkManager
-- ViewModel & LiveData
-
-**AI & ML:**
-- [Vosk](https://alphacephei.com/vosk/) `0.3.75` — offline speech recognition
-- ML Kit GenAI Summarization `1.0.0-beta1` — Gemini Nano via AICore
-
-**Testing:**
-- JUnit 4
-- Mockito
-- Compose UI Test
-- AndroidX Test
-
----
-
-## 📁 Project Structure
-
-```
-local-noter/
-├── app/src/main/java/com/noter/
-│   ├── data/               # Data layer
-│   │   ├── db/            # Room database (entities, DAOs)
-│   │   ├── model/         # Domain models
-│   │   └── repository/    # Repository pattern
-│   ├── domain/            # Business logic
-│   │   ├── RecordingManager.kt
-│   │   ├── TranscriptionWorker.kt
-│   │   ├── transcription/  # Vosk + audio decoding
-│   │   └── summarization/  # Gemini Nano summarizer
-│   ├── ui/                # UI layer
-│   │   ├── screens/       # Compose screens
-│   │   ├── viewmodels/    # State management
-│   │   ├── theme/         # Material 3 theme
-│   │   └── navigation/    # Navigation graph
-│   ├── util/              # Utilities
-│   └── MainActivity.kt    # App entry point
-├── app/src/test/          # Unit tests
-├── app/src/androidTest/   # Integration & UI tests
-└── .github/workflows/     # CI/CD (GitHub Actions)
-```
-
----
-
-## 🚀 Automated Builds (GitHub Actions)
-
-This project uses **GitHub Actions** to automatically build APKs - no Android Studio required!
-
-### How it works:
-
-**Every push to `main`:**
-- GitHub automatically builds the APK
-- Download from **Actions** tab → Latest run → Artifacts
-
-**Version releases:**
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-- GitHub automatically creates a Release
-- APK is attached to the release
-- Users can download from Releases page
-
-**Manual trigger:**
-- Go to **Actions** tab → **Build APK** → **Run workflow**
-
-### Benefits:
-✅ No Android Studio needed for releases  
-✅ Consistent builds on GitHub's servers  
-✅ Automatic APK generation for every version  
-✅ Users get production-ready APKs instantly
-
----
-
-## 🧪 Testing
-
-**Run all tests:**
-```bash
-./gradlew test                    # Unit tests
-./gradlew connectedAndroidTest    # Integration & UI tests
-```
-
-**Test Coverage:**
-- 59 comprehensive tests
-- Unit tests: ViewModels, RecordingManager, Utilities
-- Integration tests: Repository with Room database
-- UI tests: Compose screens and interactions
+- **Transcription** (Vosk) and **summarization** run entirely on-device. Nothing about what you say or record is sent to any AI provider.
+- **Google Drive backup is optional and off by default.** If you turn it on (⋮ menu → Setup Google Drive), the app writes to a `LocalNoter` folder it creates in *your* Drive, using access scoped to only the files it creates itself - it can't see or touch anything else in your Drive.
+- **On-device summarization needs a one-time model download** (⋮ menu → Setup Hugging Face). You provide your own free Hugging Face account and access token to fetch the model weights once; after that, summarization runs fully offline.
 
 ---
 
 ## 🔑 Permissions
 
-| Permission | Purpose | Required? |
-|------------|---------|-----------|
-| `RECORD_AUDIO` | Voice recording | ✅ Yes |
-| `POST_NOTIFICATIONS` | Transcription status updates | ⚠️ Optional |
+| Permission | Purpose |
+|------------|---------|
+| `RECORD_AUDIO` | Recording voice notes |
+| `POST_NOTIFICATIONS` | Transcription status updates |
+| `INTERNET` | Only used for the two opt-in features above (Drive backup, model download) |
 
 Permissions are requested at runtime only when needed.
 
 ---
 
-## 💾 Storage Location
+## 💾 Where your notes live
 
-Notes are stored in:
 ```
 /storage/emulated/0/Documents/Noter/
-├── audio/          # M4A recordings (~1MB per 5-minute note)
-└── transcripts/    # Plain text files (~5KB each)
+├── audio/          # M4A recordings
+└── transcripts/    # Plain text transcripts
 ```
 
-**Why Documents folder?**
-- Easy backup via file managers
-- Accessible by other apps
-- Survives app uninstall (user choice)
-
----
-
-## 🛠️ Development Setup
-
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or later
-- JDK 17+
-- Android SDK API 34+
-
-### First-time setup:
-1. Clone and open in Android Studio
-2. **Download the speech model** (required — transcription fails without it):
-   ```bash
-   scripts/fetch-vosk-model.sh
-   ```
-   This fetches ~41 MB into `app/src/main/assets/vosk-model-en-us/`. It is not committed
-   to git, so every fresh clone needs this once.
-3. Sync Gradle (happens automatically)
-4. Configure Android SDK if needed:
-   - **File → Project Structure → SDK Location**
-   - Install SDK Platform 34 if missing
-
-### Building:
-```bash
-./gradlew assembleDebug          # Build debug APK
-./gradlew assembleRelease        # Build release APK (requires signing)
-./gradlew installDebug           # Install to connected device
-```
-
-**APK location:** `app/build/outputs/apk/debug/app-debug.apk`
+Stored in your Documents folder specifically so it's easy to find, back up with any file manager, and survives an app uninstall if you choose to keep it.
 
 ---
 
 ## 🐛 Troubleshooting
 
-**"SDK location not found"**  
-→ Set `ANDROID_HOME` environment variable or configure in Android Studio
+**"AI summarization isn't producing anything"**
+→ Open the ⋮ menu → Setup Hugging Face and complete the one-time model download. See in-app instructions for the Hugging Face token.
 
-**"Installed Build Tools revision X.X.X is corrupted"**  
-→ Tools → SDK Manager → SDK Tools → Reinstall Build Tools
+**"Couldn't connect to Google Drive" / backup fails**
+→ Open the ⋮ menu → Setup Google Drive - it walks through what's needed. This feature requires a Google Cloud project be configured for the app; see [DEVELOPER.md](DEVELOPER.md) if you're building your own fork.
 
-**"App requires Android 14+ but device is older"**  
-→ Use a device with Android 14+ or create an AVD with API 34+
-
-**"AI summarization requires Gemini Nano"**  
-→ This feature requires Pixel 8+ or compatible device. App works without it.
-
-**Transcripts come back empty / "Vosk model not installed" in logcat**  
-→ Run `scripts/fetch-vosk-model.sh` and rebuild. The model is not in version control.
-
-**Gradle sync fails**  
-→ File → Invalidate Caches → Restart
+**Transcripts come back empty ("No speech detected")**
+→ Speak closer to the mic; check the in-app level graph while recording to confirm your voice is registering.
 
 ---
 
-## 🎯 Roadmap
+## 🏗️ Building from source
 
-- [ ] Note editing and manual corrections
-- [ ] Search and filtering
-- [ ] Tags and categories  
-- [ ] Dark theme
-- [ ] Multiple language UI support
-- [ ] Cloud sync (optional, opt-in)
-- [ ] Widget support
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests: `./gradlew test connectedAndroidTest`
-4. Commit changes (`git commit -m 'feat: add amazing feature'`)
-5. Push to branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
-
-**Code standards:**
-- Follow Kotlin coding conventions
-- Write tests for new features
-- Keep functions small and focused
-- Update documentation for significant changes
+See [DEVELOPER.md](DEVELOPER.md) for the tech stack, project structure, build setup, and test suite.
 
 ---
 
 ## 📄 License
 
 [Add your license here - MIT, Apache 2.0, etc.]
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [Jetpack Compose](https://developer.android.com/jetpack/compose) - Modern UI toolkit
-- [Vosk](https://alphacephei.com/vosk/) - Offline speech recognition
-- [ML Kit GenAI](https://developers.google.com/ml-kit/genai/summarization/android) - On-device summarization
-- [AICore Gemini Nano](https://ai.google.dev/) - On-device AI summarization
-- [Room](https://developer.android.com/training/data-storage/room) - Local database
 
 ---
 

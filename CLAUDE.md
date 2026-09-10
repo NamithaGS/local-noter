@@ -8,62 +8,109 @@ Local Noter is an Android voice-notes app: it records audio, transcribes it on-d
 summarises the transcript on-device. Recording, transcription, and summarisation never
 touch a server — that's a design constraint, so prefer offline/on-device solutions over
 cloud APIs for that part of the app. The one deliberate exception is the opt-in Google
-Drive backup (`domain/backup/`): a user who explicitly connects an account gets a daily
-digest of their own transcripts uploaded to their own Drive - still nothing sent
-anywhere without an explicit, revocable opt-in.
+Drive backup (`domain/backup/`): a user who explicitly connects an account (⋮ menu →
+"Setup Google Drive" on the note list) gets their notes archived into their own Drive as
+real Google Docs — still nothing sent anywhere without an explicit, revocable opt-in.
+Backup writes two structures under a `LocalNoter` root folder the app creates itself
+(required by the `drive.file` OAuth scope, which only grants visibility into files/folders
+the app created): `AllNotes/<year>/<month>/<date>` (every note, full transcript + summary
+if present, chronological) and `SummarizedNotes/<tag>` (just the AI summary, grouped by
+the note's user-set tag — see `NoteFiler.archiveNotes`/`summarizeNotes`).
 
 ## Technology Stack
 
-- Kotlin, Jetpack Compose (Material 3), Coroutines/Flow
-- Room (persistence), WorkManager (background transcription), Navigation Compose
+- Kotlin 2.3.0, Jetpack Compose (Material 3), Coroutines/Flow
+- Room 2.8.4 (persistence, schema version 4, `fallbackToDestructiveMigration()` — no real
+  `Migration`s written yet), WorkManager (background transcription + daily backup),
+  Navigation Compose
 - Vosk `0.3.75` (`com.alphacephei:vosk-android`) — offline speech-to-text
-- ML Kit GenAI Summarization `1.0.0-beta1` — Gemini Nano via AICore
-- AGP 8.7.3, Kotlin 2.0.20, KSP 2.0.20-1.0.25, Gradle 8.9, JDK 17, minSdk 34 / compileSdk 35
+- Summarization is **pluggable** — see `domain/summarization/SummarizationConfig.ACTIVE_BACKEND`:
+  - `GEMINI_NANO`: ML Kit GenAI Summarization `1.0.0-beta1` via AICore (Pixel 8+/Galaxy
+    S24+ only). Currently broken — rejects every summarization attempt with a
+    "policy check failure" even on supported hardware, an apparent beta-API/AICore
+    version-skew issue, not something fixable from this codebase.
+  - `LITERT_LM` (currently active): runs Gemma3-1B-IT directly via
+    `com.google.ai.edge.litertlm:litertlm-android:0.17.0`, bypassing AICore entirely.
+    Needs a one-time ~560MB model download from a gated Hugging Face repo — the user
+    supplies their own HF access token via "Setup Hugging Face" in the ⋮ menu.
+- Google Drive/Docs backup: `play-services-auth`, `google-api-services-drive`,
+  `google-api-services-docs` — see Project Overview above.
+- AGP (matches Kotlin plugin), KSP 2.3.0, Gradle 8.9, JDK 17, minSdk 34 / compileSdk 35 /
+  targetSdk 35
 
 ## Build, Test, Run
 
 ```bash
 scripts/fetch-vosk-model.sh      # REQUIRED once per clone; downloads ~41 MB model
 ./gradlew assembleDebug
-./gradlew test                   # JVM unit tests (Robolectric)
+./gradlew testDebugUnitTest      # JVM unit tests (Robolectric where needed) - 63 tests, all passing
 ./gradlew connectedAndroidTest   # instrumented tests, needs a device/emulator
 ```
 
-Requires JDK 17 (AGP rejects newer JDKs) and `ANDROID_HOME` pointing at an SDK with
-platform 35.
+Requires JDK 17. If the machine's default `java` is newer (Robolectric's bundled ASM
+can't parse newer bytecode — fails with `Unsupported class file major version ...`),
+point Gradle at a JDK 17 install explicitly: `JAVA_HOME=/path/to/jdk17 ./gradlew test`.
+Also requires `ANDROID_HOME` pointing at an SDK with platform 35.
+
+CI (`.github/workflows/release.yml`) builds and attaches `app-debug.apk` to a GitHub
+Release on every `v*` tag push (or manual `workflow_dispatch`). `app/debug.keystore` is
+committed on purpose and wired into `signingConfigs.debug` — without it, CI's ephemeral
+runners would generate a new random signing key (and SHA-1) on every build, breaking the
+registered Google OAuth client each time.
 
 ## Architecture
 
 MVVM over a repository. Recording and transcription are decoupled through WorkManager:
 
-1. `RecordingViewModel.stopRecording()` inserts a `Note` with a placeholder title and
-   enqueues `TranscriptionWorker` (pass keys via `TranscriptionWorker.KEY_*`, never
-   string literals).
+1. `RecordingViewModel.stopRecording()` inserts a `Note` with a "Transcribing..."
+   placeholder title and enqueues `TranscriptionWorker` (pass keys via
+   `TranscriptionWorker.KEY_*`, never string literals).
 2. `TranscriptionWorker` → `VoskTranscriber` → `PcmAudioDecoder` → writes the transcript
-   file → `NoteSummarizer` → updates the Room row.
+   file → `NoteSummarizer` (facade over whichever `SummarizationEngine` is active) →
+   updates the Room row.
+
+Backup is a separate two-pass daily job (`DriveBackupWorker`, self-rescheduling via
+`DriveBackupScheduler`), or triggered manually from the note list:
+1. `NoteFiler.archiveNotes()` — every not-yet-uploaded note into `AllNotes/...`.
+2. `NoteFiler.summarizeNotes()` — notes with both a tag and an existing summary into
+   `SummarizedNotes/<tag>`, each entry's date/time as a Docs `HEADING_4`
+   (`DriveService.appendToDocWithHeading` — needs an explicit index fetched from the doc
+   first, since a follow-up `updateParagraphStyle` request needs a concrete range;
+   `EndOfSegmentLocation` alone can't be targeted that way).
 
 Key constraints when touching this path:
 
 - **Vosk only accepts 16 kHz mono 16-bit PCM.** `RecordingManager` records AAC at exactly
   that rate/channel count so `PcmAudioDecoder` can decode 1:1, but the decoder still
   downmixes and resamples so older recordings keep working. If you change the recording
-  format, check both sides.
+  format, check both sides. `AudioSource` is `VOICE_RECOGNITION` (not `MIC` — too quiet
+  without AGC on many devices; not `VOICE_COMMUNICATION` — its call-oriented
+  noise-suppression/echo-cancellation made things worse without a real call in progress).
 - **The Vosk model lives in `assets/`, not git.** `StorageService.sync` requires a `uuid`
   file in the model directory and re-extracts when it changes; `fetch-vosk-model.sh`
   writes it.
-- **Summarisation is best-effort.** Gemini Nano only exists on AICore devices (Pixel 8+,
-  Galaxy S24+). `NoteSummarizer` returns a `Result` and never throws; a note must remain
-  valid with `summary == null`.
+- **Summarisation is best-effort regardless of backend.** `NoteSummarizer.summarize()`
+  returns a `SummarizationResult` (`Success` / `Skipped` / `Failed` / `NeedsSetup`) and
+  never throws; a note must remain valid with `summary == null`. `NeedsSetup` (LiteRT-LM
+  model not downloaded) is surfaced via a snackbar pointing at the ⋮ menu, not an
+  automatic prompt — downloading ~560MB should never be a side effect of tapping
+  Summarize on an arbitrary note.
 - **Release builds are minified.** JNA resolves Vosk bindings reflectively, so new
   reflective dependencies need rules in `app/proguard-rules.pro`.
+- **Mockito + Kotlin non-null parameters**: plain `org.mockito.Mockito.any()` returns
+  `null`, which trips Kotlin's runtime null-check on a non-null parameter before the stub
+  is reached. Use `anyString()`/`anyInt()`/etc. for primitives, or import
+  `org.mockito.kotlin.any()` explicitly (it shadows the wildcard-imported `Mockito.any()`)
+  for reference types. Getting this wrong doesn't just break the one test — the resulting
+  exception can corrupt Mockito's global matcher state and cascade into unrelated-looking
+  failures in whichever test happens to run next in the same JVM.
 
 Dependencies are wired by hand in `MainActivity.NoterApp()` and re-resolved inside
-`TranscriptionWorker` (WorkManager constructs workers itself). A DI framework would
-remove that duplication.
+`TranscriptionWorker`/`DriveBackupWorker` (WorkManager constructs workers itself). A DI
+framework would remove that duplication.
 
 ## Known Issues
 
-- `FileHelper` writes to `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOCUMENTS)`,
-  which scoped storage blocks on API 29+. With minSdk 34 these writes fail at runtime;
-  transcript/audio storage needs migrating to `MediaStore` or app-scoped directories.
-- The README advertises GitHub Actions builds, but no `.github/workflows/` exists.
+- No real Room `Migration`s exist yet — every schema bump (several so far) has just
+  relied on `fallbackToDestructiveMigration()`, wiping local data. Fine pre-release;
+  needs fixing before this could ship to anyone else.
