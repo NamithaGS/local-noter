@@ -139,6 +139,7 @@ fun NoteListScreen(
     // being a surprising side effect of tapping a button meant for everyday use.
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showHuggingFaceSetupDialog by remember { mutableStateOf(false) }
+    var showGoogleDriveSetupDialog by remember { mutableStateOf(false) }
 
     if (showHuggingFaceSetupDialog) {
         ModelSetupDialog(
@@ -146,6 +147,16 @@ fun NoteListScreen(
             onSetUp = { token ->
                 showHuggingFaceSetupDialog = false
                 viewModel.runModelSetup(context, token)
+            }
+        )
+    }
+
+    if (showGoogleDriveSetupDialog) {
+        GoogleDriveSetupDialog(
+            onDismiss = { showGoogleDriveSetupDialog = false },
+            onConnect = {
+                showGoogleDriveSetupDialog = false
+                driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
             }
         )
     }
@@ -196,7 +207,7 @@ fun NoteListScreen(
                                     text = { Text("Setup Google Drive") },
                                     onClick = {
                                         showOverflowMenu = false
-                                        driveSignInLauncher.launch(DriveAuth.getSignInClient(context).signInIntent)
+                                        showGoogleDriveSetupDialog = true
                                     }
                                 )
                                 DropdownMenuItem(
