@@ -45,9 +45,13 @@ class NoteListViewModelTest {
         `when`(repository.getAllNotes()).thenReturn(flowOf(testNotes))
 
         viewModel = NoteListViewModel(repository)
-        advanceUntilIdle()
 
-        val notes = viewModel.notes.first()
+        // notes is stateIn(..., SharingStarted.WhileSubscribed(5000), initialValue =
+        // emptyList()) - its upstream collection only starts once something subscribes,
+        // and a StateFlow always has a current value, so a plain first() can return the
+        // seeded empty initialValue before the real data has a chance to arrive. Waiting
+        // for a non-empty emission (rather than just the first one) sidesteps that race.
+        val notes = viewModel.notes.first { it.isNotEmpty() }
         assertEquals(2, notes.size)
         assertEquals("Test 1", notes[0].title)
         assertEquals("Test 2", notes[1].title)

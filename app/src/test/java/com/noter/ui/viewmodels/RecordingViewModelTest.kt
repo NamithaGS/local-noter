@@ -13,6 +13,11 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.Mock
 import org.mockito.Mockito.*
+// Explicit (non-star) import wins over Mockito.*'s any() for plain `any()` calls in this
+// file: org.mockito.kotlin's any() returns a real fake value for reference types instead
+// of null, avoiding a Kotlin null-check crash on a non-null parameter (e.g. insertNote's
+// Note) that plain Mockito's any() triggers.
+import org.mockito.kotlin.any
 import org.mockito.MockitoAnnotations
 import java.io.File
 
@@ -60,16 +65,24 @@ class RecordingViewModelTest {
 
     @Test
     fun `startRecording calls recordingManager with generated noteId`() = runTest {
-        `when`(recordingManager.startRecording(any())).thenReturn(Result.success(mockFile))
+        // anyString(), not any() - startRecording(noteId: String) takes a non-null
+        // String, but plain Mockito any() matches by returning null, which trips
+        // Kotlin's runtime null-check on that parameter ("any(...) must not be null")
+        // before the stub is even reached.
+        `when`(recordingManager.startRecording(anyString())).thenReturn(Result.success(mockFile))
 
         viewModel.startRecording()
         advanceUntilIdle()
 
-        verify(recordingManager).startRecording(any())
+        verify(recordingManager).startRecording(anyString())
     }
 
     @Test
     fun `stopRecording saves note to repository`() = runTest {
+        // Same anyString() reasoning as above - also needed here since this test calls
+        // startRecording() on the way to testing stopRecording(). An unstubbed call
+        // (or one broken by any()'s null) throws before stopRecording() is even reached.
+        `when`(recordingManager.startRecording(anyString())).thenReturn(Result.success(mockFile))
         `when`(recordingManager.stopRecording()).thenReturn(Result.success(60))
         `when`(recordingManager.currentFile).thenReturn(mockFile)
         `when`(mockFile.absolutePath).thenReturn("/audio.m4a")

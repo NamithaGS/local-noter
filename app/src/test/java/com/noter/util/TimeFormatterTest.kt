@@ -1,9 +1,24 @@
 package com.noter.util
 
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
 
 class TimeFormatterTest {
+
+    private val zone = ZoneId.systemDefault()
+
+    // Fixed calendar dates/times, converted through the same system-default zone
+    // formatTime/formatDateHeader use internally, rather than raw millisecond
+    // arithmetic - avoids the tests being sensitive to DST transitions or to whatever
+    // timezone happens to run them.
+    private fun epochMillisOf(date: LocalDate): Long =
+        date.atStartOfDay(zone).toInstant().toEpochMilli()
+
+    private fun epochMillisOf(dateTime: LocalDateTime): Long =
+        dateTime.atZone(zone).toInstant().toEpochMilli()
 
     @Test
     fun formatDurationZeroSeconds() {
@@ -118,5 +133,63 @@ class TimeFormatterTest {
     @Test
     fun formatDurationMultipleHours() {
         assertEquals("125:45", TimeFormatter.formatDuration(7545))
+    }
+
+    @Test
+    fun formatTimeMorning() {
+        val timestamp = epochMillisOf(LocalDateTime.of(2026, 1, 15, 9, 5))
+        assertEquals("9:05 AM", TimeFormatter.formatTime(timestamp))
+    }
+
+    @Test
+    fun formatTimeAfternoon() {
+        val timestamp = epochMillisOf(LocalDateTime.of(2026, 1, 15, 14, 30))
+        assertEquals("2:30 PM", TimeFormatter.formatTime(timestamp))
+    }
+
+    @Test
+    fun formatTimeMidnight() {
+        val timestamp = epochMillisOf(LocalDateTime.of(2026, 1, 15, 0, 0))
+        assertEquals("12:00 AM", TimeFormatter.formatTime(timestamp))
+    }
+
+    @Test
+    fun formatTimeNoon() {
+        val timestamp = epochMillisOf(LocalDateTime.of(2026, 1, 15, 12, 0))
+        assertEquals("12:00 PM", TimeFormatter.formatTime(timestamp))
+    }
+
+    @Test
+    fun formatDateHeaderToday() {
+        val now = epochMillisOf(LocalDate.of(2026, 6, 15))
+        assertEquals("Today", TimeFormatter.formatDateHeader(now, now))
+    }
+
+    @Test
+    fun formatDateHeaderYesterday() {
+        val now = epochMillisOf(LocalDate.of(2026, 6, 15))
+        val yesterday = epochMillisOf(LocalDate.of(2026, 6, 14))
+        assertEquals("Yesterday", TimeFormatter.formatDateHeader(yesterday, now))
+    }
+
+    @Test
+    fun formatDateHeaderSameYearShowsMonthAndDay() {
+        val now = epochMillisOf(LocalDate.of(2026, 6, 15))
+        val earlier = epochMillisOf(LocalDate.of(2026, 3, 10))
+        assertEquals("March 10", TimeFormatter.formatDateHeader(earlier, now))
+    }
+
+    @Test
+    fun formatDateHeaderDifferentYearShowsMonthDayAndYear() {
+        val now = epochMillisOf(LocalDate.of(2026, 6, 15))
+        val lastYear = epochMillisOf(LocalDate.of(2025, 3, 10))
+        assertEquals("March 10, 2025", TimeFormatter.formatDateHeader(lastYear, now))
+    }
+
+    @Test
+    fun formatDateHeaderTwoDaysAgoIsNotYesterday() {
+        val now = epochMillisOf(LocalDate.of(2026, 6, 15))
+        val twoDaysAgo = epochMillisOf(LocalDate.of(2026, 6, 13))
+        assertEquals("June 13", TimeFormatter.formatDateHeader(twoDaysAgo, now))
     }
 }
