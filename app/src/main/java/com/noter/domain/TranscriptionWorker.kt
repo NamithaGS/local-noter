@@ -56,6 +56,7 @@ class TranscriptionWorker(
         private const val MAX_TITLE_LENGTH = 30
         private const val MAX_ATTEMPTS = 3
         private const val NO_SPEECH_TITLE = "No speech detected"
+        private const val TRANSCRIPTION_FAILED_TITLE = "Transcription failed"
     }
 
     private val transcriber by lazy { SherpaOnnxTranscriber(applicationContext) }
@@ -112,12 +113,33 @@ class TranscriptionWorker(
         } catch (e: SherpaOnnxTranscriber.ModelNotInstalledException) {
             // A missing model is a build/setup problem; retrying cannot fix it.
             Log.e(TAG, "sherpa-onnx model not installed", e)
+            updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
             Result.failure()
         } catch (e: IOException) {
             Log.w(TAG, "Transcription of note $noteId failed (attempt $runAttemptCount)", e)
-            if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+            if (runAttemptCount < MAX_ATTEMPTS) {
+                Result.retry()
+            } else {
+                // Without this, a note that exhausts its retries is left showing
+                // "Transcribing..." forever - indistinguishable from a job that's still
+                // legitimately in progress, with nothing in the UI to say otherwise.
+                updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
+                Result.failure()
+            }
+        } catch (e: OutOfMemoryError) {
+            // Error, not Exception - a plain `catch (e: Exception)` below would not have
+            // caught this, which is exactly how a very long recording (e.g. a ~30 minute
+            // meeting, decoded and processed as one huge in-memory buffer) previously left
+            // notes stuck at "Transcribing..." forever with nothing logged at all.
+            // SherpaOnnxTranscriber now processes long recordings in bounded chunks
+            // specifically to avoid this, but this stays as a defensive backstop - and so
+            // a recurrence is at least visible in logcat instead of silent.
+            Log.e(TAG, "Out of memory transcribing note $noteId (audio: $audioPath)", e)
+            updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
+            Result.failure()
         } catch (e: Exception) {
             Log.e(TAG, "Unrecoverable failure transcribing note $noteId", e)
+            updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
             Result.failure()
         }
     }

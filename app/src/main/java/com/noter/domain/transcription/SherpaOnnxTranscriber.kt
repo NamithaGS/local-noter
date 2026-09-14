@@ -31,6 +31,16 @@ class SherpaOnnxTranscriber(private val context: Context) {
      * Transcribes [audioFile] and returns the recognised text, or an empty string when
      * the recording contained no intelligible speech.
      *
+     * Feeds sherpa-onnx's *offline* (non-streaming) recogniser fixed-size chunks (see
+     * [CHUNK_DURATION_SECONDS]) rather than the whole recording in one `acceptWaveform()`
+     * call - that worked fine for short notes, but a ~30 minute meeting is ~28 million
+     * samples as one buffer, which is not what this API is built to process as a single
+     * utterance and risks an OutOfMemoryError or a native call slow enough to get the
+     * background job killed. Chunking bounds memory and per-call compute to a fixed size
+     * regardless of recording length. The trade-off is a word occasionally getting cut at
+     * a chunk boundary and mis-recognised right at the seam - a small accuracy cost next
+     * to "doesn't transcribe at all."
+     *
      * @throws ModelNotInstalledException if the sherpa-onnx model is missing from assets.
      * @throws IOException on decode or recognition failure.
      */
@@ -40,43 +50,52 @@ class SherpaOnnxTranscriber(private val context: Context) {
         val modelDir = unpackModel()
         val recognizer = createRecognizer(modelDir)
         try {
-            val stream = recognizer.createStream()
-            try {
-                stream.acceptWaveform(decodeToFloatSamples(audioFile), PcmAudioDecoder.TARGET_SAMPLE_RATE)
-                recognizer.decode(stream)
-                recognizer.getResult(stream).text.trim()
-            } finally {
-                stream.release()
+            val transcript = StringBuilder()
+            val chunk = FloatArray(CHUNK_SAMPLE_CAPACITY)
+            var chunkLength = 0
+
+            fun flushChunk() {
+                if (chunkLength == 0) return
+                val text = recognize(recognizer, chunk, chunkLength)
+                if (text.isNotEmpty()) {
+                    if (transcript.isNotEmpty()) transcript.append(' ')
+                    transcript.append(text)
+                }
+                chunkLength = 0
             }
+
+            PcmAudioDecoder.decode(audioFile) { pcm, sampleCount ->
+                var offset = 0
+                while (offset < sampleCount) {
+                    val spaceLeft = chunk.size - chunkLength
+                    val take = minOf(spaceLeft, sampleCount - offset)
+                    for (i in 0 until take) {
+                        chunk[chunkLength + i] = pcm[offset + i] / 32768f
+                    }
+                    chunkLength += take
+                    offset += take
+                    if (chunkLength == chunk.size) flushChunk()
+                }
+            }
+            flushChunk() // the final, shorter-than-a-full-chunk remainder
+
+            transcript.toString().trim()
         } finally {
             recognizer.release()
         }
     }
 
-    /**
-     * Decodes [audioFile] into one normalized float32 PCM buffer, in the -1f..1f range
-     * sherpa-onnx expects.
-     *
-     * Unlike Vosk's incremental streaming recogniser, sherpa-onnx's *offline* API wants
-     * the entire utterance in a single `acceptWaveform()` call, so [PcmAudioDecoder]'s
-     * chunked callback output is accumulated into one growable buffer here rather than
-     * fed through directly.
-     */
-    private fun decodeToFloatSamples(audioFile: File): FloatArray {
-        var buffer = FloatArray(INITIAL_SAMPLE_CAPACITY)
-        var length = 0
-
-        PcmAudioDecoder.decode(audioFile) { pcm, sampleCount ->
-            if (length + sampleCount > buffer.size) {
-                buffer = buffer.copyOf(maxOf(buffer.size * 2, length + sampleCount))
-            }
-            for (i in 0 until sampleCount) {
-                buffer[length + i] = pcm[i] / 32768f
-            }
-            length += sampleCount
+    /** Runs one chunk through a fresh stream and returns its recognised text. */
+    private fun recognize(recognizer: OfflineRecognizer, samples: FloatArray, length: Int): String {
+        val stream = recognizer.createStream()
+        try {
+            val chunkSamples = if (length == samples.size) samples else samples.copyOf(length)
+            stream.acceptWaveform(chunkSamples, PcmAudioDecoder.TARGET_SAMPLE_RATE)
+            recognizer.decode(stream)
+            return recognizer.getResult(stream).text.trim()
+        } finally {
+            stream.release()
         }
-
-        return if (length == buffer.size) buffer else buffer.copyOf(length)
     }
 
     private fun createRecognizer(modelDir: File): OfflineRecognizer {
@@ -142,7 +161,13 @@ class SherpaOnnxTranscriber(private val context: Context) {
 
         val MODEL_FILES = listOf("encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt")
 
-        /** ~1 minute of 16kHz mono audio; decodeToFloatSamples grows this as needed. */
-        const val INITIAL_SAMPLE_CAPACITY = 16_000 * 60
+        /**
+         * Long enough that per-chunk overhead (re-running the encoder on a short clip)
+         * stays negligible, short enough to keep memory and per-call compute bounded
+         * regardless of how long the recording is. Not tuned beyond "reasonable" - revisit
+         * if word-boundary mis-recognition at chunk seams turns out to matter in practice.
+         */
+        const val CHUNK_DURATION_SECONDS = 30
+        const val CHUNK_SAMPLE_CAPACITY = PcmAudioDecoder.TARGET_SAMPLE_RATE * CHUNK_DURATION_SECONDS
     }
 }
