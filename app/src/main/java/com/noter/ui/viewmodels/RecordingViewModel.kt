@@ -9,6 +9,7 @@ import com.noter.data.model.Note
 import com.noter.data.repository.NoteRepository
 import com.noter.domain.RecordingManager
 import com.noter.domain.TranscriptionWorker
+import com.noter.util.DiagnosticLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -65,6 +66,14 @@ class RecordingViewModel(
                     ))
                     .build()
                 workManager.enqueue(workRequest)
+                // The hand-off from recording to background transcription: if a note later
+                // sits at "Transcribing..." forever, this line says whether it was ever
+                // enqueued and what audio it was given.
+                DiagnosticLog.i(
+                    "RecordingViewModel",
+                    "enqueued transcription note=${currentNoteId} duration=${duration}s " +
+                        "audio=${java.io.File(audioPath).length()}B path=$audioPath"
+                )
             }
         }
     }

@@ -106,6 +106,12 @@ Key constraints when touching this path:
   model not downloaded) is surfaced via a snackbar pointing at the ⋮ menu, not an
   automatic prompt — downloading ~560MB should never be a side effect of tapping
   Summarize on an arbitrary note.
+- **Use `DiagnosticLog`, not `android.util.Log`, on the recording -> transcription path.**
+  It also writes to `Documents/Noter/logs/noter-log.txt` (metrics only, never transcript
+  text) so a background failure during a long recording is inspectable without a USB
+  connection - see "Diagnostic log" in DEVELOPER.md for how to read it. Note
+  `catch (e: Exception)` does not catch `OutOfMemoryError` (an `Error`), and
+  `CancellationException` must be rethrown, not reported as a failure.
 - **Release builds are minified.** JNA resolves Vosk bindings reflectively, so new
   reflective dependencies need rules in `app/proguard-rules.pro`.
 - **Mockito + Kotlin non-null parameters**: plain `org.mockito.Mockito.any()` returns

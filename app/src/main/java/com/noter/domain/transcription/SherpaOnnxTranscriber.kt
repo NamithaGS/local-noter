@@ -6,6 +6,7 @@ import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
+import com.noter.util.DiagnosticLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -47,16 +48,41 @@ class SherpaOnnxTranscriber(private val context: Context) {
     suspend fun transcribe(audioFile: File): String = withContext(Dispatchers.IO) {
         require(audioFile.exists()) { "Audio file does not exist: ${audioFile.absolutePath}" }
 
+        val startedAt = System.nanoTime()
         val modelDir = unpackModel()
         val recognizer = createRecognizer(modelDir)
+        DiagnosticLog.i(TAG, "model ready in ${secondsSince(startedAt)}s (file=${audioFile.length()}B)")
+
         try {
             val transcript = StringBuilder()
             val chunk = FloatArray(CHUNK_SAMPLE_CAPACITY)
             var chunkLength = 0
+            var chunkIndex = 0
+            var totalSamples = 0L
+            var inferenceNanos = 0L
 
             fun flushChunk() {
                 if (chunkLength == 0) return
+
+                val levels = TranscriptionDiagnostics.audioLevels(chunk, chunkLength)
+                val inferenceStart = System.nanoTime()
                 val text = recognize(recognizer, chunk, chunkLength)
+                val inferenceElapsed = System.nanoTime() - inferenceStart
+
+                val chunkSeconds = chunkLength.toDouble() / PcmAudioDecoder.TARGET_SAMPLE_RATE
+                DiagnosticLog.i(
+                    TAG,
+                    "chunk #$chunkIndex at ${formatClock(chunkIndex * CHUNK_DURATION_SECONDS)} " +
+                        "len=${"%.1f".format(chunkSeconds)}s " +
+                        "peak=${"%.3f".format(levels.peak)} rms=${"%.1f".format(levels.rmsDb)}dBFS " +
+                        "infer=${"%.2f".format(inferenceElapsed / 1e9)}s " +
+                        "chars=${text.length} words=${text.split(' ').count { it.isNotEmpty() }}"
+                )
+
+                inferenceNanos += inferenceElapsed
+                totalSamples += chunkLength
+                chunkIndex++
+
                 if (text.isNotEmpty()) {
                     if (transcript.isNotEmpty()) transcript.append(' ')
                     transcript.append(text)
@@ -79,11 +105,30 @@ class SherpaOnnxTranscriber(private val context: Context) {
             }
             flushChunk() // the final, shorter-than-a-full-chunk remainder
 
-            transcript.toString().trim()
+            val result = transcript.toString().trim()
+
+            // inference/audio is the real-time factor: below 1.0 the phone transcribes
+            // faster than the audio plays. It decides whether a bigger model is viable
+            // inside WorkManager's ~10 minute per-job limit for a long meeting.
+            val audioSeconds = totalSamples.toDouble() / PcmAudioDecoder.TARGET_SAMPLE_RATE
+            val inferenceSeconds = inferenceNanos / 1e9
+            DiagnosticLog.i(
+                TAG,
+                "done audio=${"%.1f".format(audioSeconds)}s chunks=$chunkIndex " +
+                    "wall=${secondsSince(startedAt)}s infer=${"%.1f".format(inferenceSeconds)}s " +
+                    "rtf=${"%.3f".format(if (audioSeconds > 0) inferenceSeconds / audioSeconds else 0.0)} " +
+                    "chars=${result.length} " +
+                    "longestWordRun=${TranscriptionDiagnostics.longestWordRun(result)}"
+            )
+            result
         } finally {
             recognizer.release()
         }
     }
+
+    private fun secondsSince(startNanos: Long): String = "%.1f".format((System.nanoTime() - startNanos) / 1e9)
+
+    private fun formatClock(totalSeconds: Int): String = "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 
     /** Runs one chunk through a fresh stream and returns its recognised text. */
     private fun recognize(recognizer: OfflineRecognizer, samples: FloatArray, length: Int): String {
@@ -156,6 +201,8 @@ class SherpaOnnxTranscriber(private val context: Context) {
     }
 
     private companion object {
+        const val TAG = "SherpaOnnxTranscriber"
+
         /** Directory under `app/src/main/assets/` holding the model. */
         const val MODEL_ASSET_DIR = "sherpa-onnx-en"
 

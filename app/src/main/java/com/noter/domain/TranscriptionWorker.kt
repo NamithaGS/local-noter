@@ -1,14 +1,16 @@
 package com.noter.domain
 
 import android.content.Context
-import android.util.Log
+import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.noter.data.db.AppDatabase
 import com.noter.domain.summarization.NoteSummarizer
 import com.noter.domain.summarization.SummarizationResult
 import com.noter.domain.transcription.SherpaOnnxTranscriber
+import com.noter.util.DiagnosticLog
 import com.noter.util.FileHelper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -68,9 +70,17 @@ class TranscriptionWorker(
 
         val audioFile = File(audioPath)
         if (!audioFile.exists()) {
-            Log.e(TAG, "Audio file missing, giving up on note $noteId: $audioPath")
+            DiagnosticLog.e(TAG, "Audio file missing, giving up on note $noteId: $audioPath")
             return@withContext Result.failure()
         }
+
+        val startedAt = System.nanoTime()
+        DiagnosticLog.i(
+            TAG,
+            "start note=$noteId attempt=$runAttemptCount audio=${audioFile.length()}B " +
+                "device=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} " +
+                "heapMax=${Runtime.getRuntime().maxMemory() / (1024 * 1024)}MB"
+        )
 
         try {
             val transcript = transcriber.transcribe(audioFile)
@@ -78,7 +88,7 @@ class TranscriptionWorker(
             if (transcript.isEmpty()) {
                 // Retrying will not conjure speech out of silence, so record the outcome
                 // in the title and treat the job as done.
-                Log.i(TAG, "No speech recognised in note $noteId")
+                DiagnosticLog.i(TAG, "No speech recognised in note $noteId")
                 updateNote(noteId, title = NO_SPEECH_TITLE)
                 return@withContext Result.success()
             }
@@ -89,15 +99,18 @@ class TranscriptionWorker(
             val summary = when (val result = summarizer.summarize(transcript)) {
                 is SummarizationResult.Success -> result.summary
                 is SummarizationResult.Skipped -> {
-                    Log.i(TAG, "Summary skipped for note $noteId: ${result.reason}")
+                    DiagnosticLog.i(TAG, "Summary skipped for note $noteId: ${result.reason}")
                     null
                 }
-                is SummarizationResult.Failed -> null
+                is SummarizationResult.Failed -> {
+                    DiagnosticLog.w(TAG, "Summary failed for note $noteId", result.cause)
+                    null
+                }
                 // Can't prompt for a Hugging Face token from a background worker - this
                 // note just goes without a summary until the manual Summarize button is
                 // used once setup is done via that path.
                 SummarizationResult.NeedsSetup -> {
-                    Log.i(TAG, "Summary skipped for note $noteId: on-device model not set up yet")
+                    DiagnosticLog.i(TAG, "Summary skipped for note $noteId: on-device model not set up yet")
                     null
                 }
             }
@@ -109,14 +122,19 @@ class TranscriptionWorker(
                 summary = summary
             )
 
+            DiagnosticLog.i(
+                TAG,
+                "finished note=$noteId ok total=${"%.1f".format((System.nanoTime() - startedAt) / 1e9)}s " +
+                    "summary=${summary != null}"
+            )
             Result.success()
         } catch (e: SherpaOnnxTranscriber.ModelNotInstalledException) {
             // A missing model is a build/setup problem; retrying cannot fix it.
-            Log.e(TAG, "sherpa-onnx model not installed", e)
+            DiagnosticLog.e(TAG, "sherpa-onnx model not installed", e)
             updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
             Result.failure()
         } catch (e: IOException) {
-            Log.w(TAG, "Transcription of note $noteId failed (attempt $runAttemptCount)", e)
+            DiagnosticLog.w(TAG, "Transcription of note $noteId failed (attempt $runAttemptCount)", e)
             if (runAttemptCount < MAX_ATTEMPTS) {
                 Result.retry()
             } else {
@@ -134,11 +152,22 @@ class TranscriptionWorker(
             // SherpaOnnxTranscriber now processes long recordings in bounded chunks
             // specifically to avoid this, but this stays as a defensive backstop - and so
             // a recurrence is at least visible in logcat instead of silent.
-            Log.e(TAG, "Out of memory transcribing note $noteId (audio: $audioPath)", e)
+            DiagnosticLog.e(TAG, "Out of memory transcribing note $noteId (audio: $audioPath)", e)
             updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
             Result.failure()
+        } catch (e: CancellationException) {
+            // WorkManager stopped this job (e.g. its ~10 minute execution limit, or a
+            // constraint no longer holding). Not a failure of the transcription itself:
+            // rethrow so WorkManager reschedules it, rather than marking the note failed.
+            // stopReason is what distinguishes "timed out" from "constraint lost".
+            DiagnosticLog.w(
+                TAG,
+                "stopped note=$noteId attempt=$runAttemptCount stopReason=$stopReason " +
+                    "after ${"%.1f".format((System.nanoTime() - startedAt) / 1e9)}s"
+            )
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Unrecoverable failure transcribing note $noteId", e)
+            DiagnosticLog.e(TAG, "Unrecoverable failure transcribing note $noteId", e)
             updateNote(noteId, title = TRANSCRIPTION_FAILED_TITLE)
             Result.failure()
         }
@@ -180,7 +209,7 @@ class TranscriptionWorker(
         val noteDao = AppDatabase.getDatabase(applicationContext).noteDao()
         val note = noteDao.getNoteById(noteId)
         if (note == null) {
-            Log.w(TAG, "Note $noteId no longer exists; discarding transcription result")
+            DiagnosticLog.w(TAG, "Note $noteId no longer exists; discarding transcription result")
             return
         }
 

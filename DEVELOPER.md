@@ -173,6 +173,37 @@ scripts/fetch-sherpa-model.sh   # required - transcription throws ModelNotInstal
 
 ---
 
+## 🔎 Diagnostic log
+
+Every line the transcription pipeline writes also goes to a rotating file on the device, because logcat needs a USB connection and its buffer is gone long before a background job that died mid-meeting can be inspected:
+
+```
+/storage/emulated/0/Documents/Noter/logs/noter-log.txt     # current (rotates at ~1MB)
+/storage/emulated/0/Documents/Noter/logs/noter-log.1.txt   # previous
+```
+
+Grab it with any file manager, or `adb pull /sdcard/Documents/Noter/logs/`. It records **metrics only - never transcript text or audio** - so it's safe to share. Use `DiagnosticLog.i/w/e(tag, msg)` (`util/DiagnosticLog.kt`) instead of `android.util.Log` anywhere on this path; it forwards to logcat too and can never throw into the caller.
+
+What a healthy transcription looks like:
+
+```
+RecordingViewModel: enqueued transcription note=... duration=1812s audio=7249331B path=...
+TranscriptionWorker: start note=... attempt=0 audio=7249331B device=Pixel 10 Pro sdk=36 heapMax=512MB
+SherpaOnnxTranscriber: model ready in 1.4s (file=7249331B)
+SherpaOnnxTranscriber: chunk #0 at 00:00 len=30.0s peak=0.412 rms=-28.3dBFS infer=1.84s chars=402 words=71
+...
+SherpaOnnxTranscriber: done audio=1812.0s chunks=61 wall=131.2s infer=118.0s rtf=0.065 chars=24118 longestWordRun=2
+TranscriptionWorker: finished note=... ok total=131.4s summary=true
+```
+
+How to read it:
+- **`rms` per chunk** - speech at a healthy level sits around -35 to -15 dBFS. Consistently far below that is a capture problem (distance, gain), not a model problem, and no model swap will fix it.
+- **`rtf`** (inference seconds / audio seconds) - below 1.0 means faster than real time. WorkManager stops a job after ~10 minutes, so `rtf * audio length` has to stay under that for a long meeting; this is the number that decides whether a bigger model is viable.
+- **`longestWordRun`** - a large value on a long transcript is the signature of silence hallucination ("THE THE THE"), as opposed to genuinely poor recognition of real speech.
+- **`stopped ... stopReason=N`** - WorkManager killed the job; `attempt` shows how many times it has restarted.
+
+---
+
 ## 🐛 Troubleshooting (build/dev)
 
 **"SDK location not found"**

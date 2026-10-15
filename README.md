@@ -77,6 +77,9 @@ Stored in your Documents folder specifically so it's easy to find, back up with 
 **"Couldn't connect to Google Drive" / backup fails**
 → Open the ⋮ menu → Setup Google Drive - it walks through what's needed. This feature requires a Google Cloud project be configured for the app; see [DEVELOPER.md](DEVELOPER.md) if you're building your own fork.
 
+**Something went wrong and I want to report it**
+→ Share `Documents/Noter/logs/noter-log.txt` from your file manager. It contains timings, audio levels and error details only - no transcript text or audio.
+
 **Transcripts come back empty ("No speech detected")**
 → Speak closer to the mic; check the in-app level graph while recording to confirm your voice is registering.
 
